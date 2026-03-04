@@ -1,0 +1,267 @@
+﻿[
+    {
+        "Title":  "Salary",
+        "Balance Amount":  "1599926.0",
+        "Category Type":  "Income"
+    },
+    {
+        "Title":  "Business Income/Profit",
+        "Balance Amount":  "380851.0",
+        "Category Type":  "Income"
+    },
+    {
+        "Title":  "Investment",
+        "Balance Amount":  "0.0",
+        "Category Type":  "Income"
+    },
+    {
+        "Title":  "Commission",
+        "Balance Amount":  "13629.0",
+        "Category Type":  "Income"
+    },
+    {
+        "Title":  "Pension",
+        "Balance Amount":  "0.0",
+        "Category Type":  "Income"
+    },
+    {
+        "Title":  "Allowance",
+        "Balance Amount":  "0.0",
+        "Category Type":  "Income"
+    },
+    {
+        "Title":  "Bonus",
+        "Balance Amount":  "2900.0",
+        "Category Type":  "Income"
+    },
+    {
+        "Title":  "Transport Income",
+        "Balance Amount":  "3610.0",
+        "Category Type":  "Income"
+    },
+    {
+        "Title":  "Pocket Money",
+        "Balance Amount":  "0.0",
+        "Category Type":  "Income"
+    },
+    {
+        "Title":  "Freelance",
+        "Balance Amount":  "0.0",
+        "Category Type":  "Income"
+    },
+    {
+        "Title":  "Tutoring Income",
+        "Balance Amount":  "0.0",
+        "Category Type":  "Income"
+    },
+    {
+        "Title":  "Gifts Received",
+        "Balance Amount":  "8605.0",
+        "Category Type":  "Income"
+    },
+    {
+        "Title":  "Rent Received",
+        "Balance Amount":  "0.0",
+        "Category Type":  "Income"
+    },
+    {
+        "Title":  "Loan Received",
+        "Balance Amount":  "263805.0",
+        "Category Type":  "Income"
+    },
+    {
+        "Title":  "Other Income",
+        "Balance Amount":  "1722.0",
+        "Category Type":  "Income"
+    },
+    {
+        "Title":  "Savings",
+        "Balance Amount":  "0.0",
+        "Category Type":  "Income"
+    },
+    {
+        "Title":  "Personal",
+        "Balance Amount":  "1930.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Food \u0026 Drink",
+        "Balance Amount":  "63471.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Transport",
+        "Balance Amount":  "0.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Grocery",
+        "Balance Amount":  "84808.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Travel",
+        "Balance Amount":  "45442.2",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Entertainment",
+        "Balance Amount":  "3613.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Fuel \u0026 Maintenance",
+        "Balance Amount":  "82075.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Bills \u0026 Utilities",
+        "Balance Amount":  "11864.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Medical",
+        "Balance Amount":  "64724.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Shopping",
+        "Balance Amount":  "114628.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Education",
+        "Balance Amount":  "18916.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Office",
+        "Balance Amount":  "1296.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Home",
+        "Balance Amount":  "31516.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Rent Paid",
+        "Balance Amount":  "414044.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Loan Paid",
+        "Balance Amount":  "761953.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Donations/Charity",
+        "Balance Amount":  "6082.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Gifts",
+        "Balance Amount":  "3607.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Family",
+        "Balance Amount":  "6050.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Health \u0026 Fitness",
+        "Balance Amount":  "9490.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Wedding",
+        "Balance Amount":  "0.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Mobile",
+        "Balance Amount":  "46782.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Electronics",
+        "Balance Amount":  "0.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Insurance",
+        "Balance Amount":  "0.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Committee",
+        "Balance Amount":  "0.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Installment",
+        "Balance Amount":  "0.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Other Expenses",
+        "Balance Amount":  "3634.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "CNG",
+        "Balance Amount":  "41203.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "D and S",
+        "Balance Amount":  "51084.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Refund",
+        "Balance Amount":  "0.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Refunds",
+        "Balance Amount":  "108725.0",
+        "Category Type":  "Income"
+    },
+    {
+        "Title":  "Business Inventory ",
+        "Balance Amount":  "7675.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Business Expenses ",
+        "Balance Amount":  "53989.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Investments",
+        "Balance Amount":  "195500.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Petrol",
+        "Balance Amount":  "14669.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Adjustments",
+        "Balance Amount":  "21637.0",
+        "Category Type":  "Income"
+    },
+    {
+        "Title":  "Trip",
+        "Balance Amount":  "53045.0",
+        "Category Type":  "Expense"
+    },
+    {
+        "Title":  "Pet",
+        "Balance Amount":  "42563.0",
+        "Category Type":  "Expense"
+    }
+]

@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-appbg text-slate-900 antialiased;
+  background-image: radial-gradient(circle at top, rgba(124, 58, 237, 0.12), transparent 45%);
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.dark body {
+  @apply bg-slate-950 text-slate-100;
+  background-image: radial-gradient(circle at top, rgba(124, 58, 237, 0.22), transparent 45%);
+}
+
+.app-container {
+  @apply mx-auto flex w-full max-w-app flex-col overflow-hidden;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
+}
+
+.safe-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.card-surface {
+  @apply rounded-2xl bg-cardbg shadow-card dark:bg-slate-900 dark:shadow-none dark:ring-1 dark:ring-slate-800;
+}
+
+.scroll-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+.scroll-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.font-bold,
+.font-extrabold {
+  font-weight: 600;
+}

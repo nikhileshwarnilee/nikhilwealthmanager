@@ -1,0 +1,30 @@
+{
+  "name": "expense-manager-pwa",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "pwa:dev": "vite --host",
+    "pwa:build": "vite build",
+    "pwa:preview": "vite preview --host --port 4173",
+    "pwa": "npm run pwa:build && npm run pwa:preview"
+  },
+  "dependencies": {
+    "axios": "^1.8.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.1",
+    "recharts": "^2.15.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.4.1",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "vite": "^7.3.1",
+    "vite-plugin-pwa": "^1.2.0"
+  }
+}
