@@ -5,13 +5,10 @@ import AppProviders from './app/AppProviders';
 import { ErrorBoundary } from './app/ErrorBoundary';
 import './index.css';
 
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {
-      // Ignore registration failures in production fallback scenarios.
-    });
-  });
-}
+window.addEventListener('vite:preloadError', (event) => {
+  event.preventDefault();
+  window.location.reload();
+});
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

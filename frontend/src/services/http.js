@@ -16,8 +16,13 @@ let refreshingPromise = null;
 
 http.interceptors.request.use((config) => {
   const token = getAccessToken();
+  config.headers = config.headers || {};
+  config.headers['Cache-Control'] = 'no-cache';
+  config.headers.Pragma = 'no-cache';
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  } else if (config.headers.Authorization) {
+    delete config.headers.Authorization;
   }
   return config;
 });

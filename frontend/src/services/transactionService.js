@@ -1,4 +1,5 @@
 import { http, unwrapApiResponse } from './http';
+import { clearPaginatedTransactionCache } from '../state/paginatedTransactionCache';
 
 export async function fetchTransactions(params = {}) {
   const response = await http.get('/transactions/list.php', { params });
@@ -46,12 +47,16 @@ export async function fetchTransactionView(id) {
 
 export async function createTransaction(payload) {
   const response = await http.post('/transactions/create.php', payload);
-  return unwrapApiResponse(response);
+  const data = unwrapApiResponse(response);
+  clearPaginatedTransactionCache();
+  return data;
 }
 
 export async function updateTransaction(payload) {
   const response = await http.put('/transactions/update.php', payload);
-  return unwrapApiResponse(response);
+  const data = unwrapApiResponse(response);
+  clearPaginatedTransactionCache();
+  return data;
 }
 
 export async function uploadTransactionReceipt(file) {
@@ -67,7 +72,9 @@ export async function uploadTransactionReceipt(file) {
 
 export async function deleteTransaction(id) {
   const response = await http.delete('/transactions/delete.php', { data: { id } });
-  return unwrapApiResponse(response);
+  const data = unwrapApiResponse(response);
+  clearPaginatedTransactionCache();
+  return data;
 }
 
 export async function monthlySummary(params = {}) {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useNavigationType, useParams, useSearchParams } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import AppShell from '../../components/AppShell';
 import CollapsibleIntervalSection from '../../components/CollapsibleIntervalSection';
@@ -17,6 +17,7 @@ import { exportTransactionsToCsv } from '../../utils/csv';
 import { formatCurrency, formatDate } from '../../utils/format';
 import {
   createDefaultIntervalState,
+  intervalDateRange,
   intervalDisplayLabel,
   intervalSummaryParams,
   intervalToQueryParams,
@@ -30,6 +31,7 @@ function toType(value) {
 
 export default function CategoryBreakdownPage() {
   const navigate = useNavigate();
+  const navigationType = useNavigationType();
   const { id } = useParams();
   const { pushToast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -49,9 +51,22 @@ export default function CategoryBreakdownPage() {
   const [report, setReport] = useState(null);
   const paramsString = searchParams.toString();
   const loadMoreRef = useRef(null);
+  const initializedRef = useRef(false);
 
   const debouncedSearch = useDebounce(searchTerm, 300);
   const intervalLabel = useMemo(() => intervalDisplayLabel(interval), [interval]);
+
+  useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
+    if (navigationType === 'POP') return;
+
+    setInterval(parseIntervalFromParams(searchParams) || createDefaultIntervalState());
+    setType(toType(searchParams.get('type')));
+    setSearchTerm('');
+    setSearchOpen(false);
+  }, [navigationType, searchParams, setInterval, setSearchOpen, setSearchTerm, setType]);
 
   useEffect(() => {
     const next = new URLSearchParams();
@@ -103,7 +118,7 @@ export default function CategoryBreakdownPage() {
 
   const transactionQuery = useMemo(
     () => ({
-      ...(intervalSummaryParams(interval) || {}),
+      ...(intervalDateRange(interval) || {}),
       category_id: categoryId,
       type
     }),

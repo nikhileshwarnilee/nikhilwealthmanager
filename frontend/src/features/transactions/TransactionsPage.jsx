@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useNavigationType } from 'react-router-dom';
 import AppShell from '../../components/AppShell';
 import CollapsibleIntervalSection from '../../components/CollapsibleIntervalSection';
 import EmptyState from '../../components/EmptyState';
@@ -66,6 +66,7 @@ function AccountStripSelector({ items, selected, onSelect }) {
 
 export default function TransactionsPage() {
   const navigate = useNavigate();
+  const navigationType = useNavigationType();
   const { pushToast } = useToast();
   const [searchOpen, setSearchOpen] = useRouteState('transactions-search-open', false);
   const [searchTerm, setSearchTerm] = useRouteState('transactions-search-term', '');
@@ -73,7 +74,17 @@ export default function TransactionsPage() {
   const [type, setType] = useRouteState('transactions-type-filter', '');
   const [accountId, setAccountId] = useRouteState('transactions-account-filter', '');
   const [accounts, setAccounts] = useState([]);
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
   const loadMoreRef = useRef(null);
+  const initializedRef = useRef(false);
+  const allowedTypeValues = useMemo(() => new Set(typeOptions.map((option) => String(option.value))), []);
+  const normalizedType = allowedTypeValues.has(String(type)) ? String(type) : '';
+  const normalizedAccountId = useMemo(() => {
+    const raw = String(accountId || '').trim();
+    if (!raw) return '';
+    if (!accountsLoaded) return raw;
+    return accounts.some((account) => String(account.id) === raw) ? raw : '';
+  }, [accountId, accounts, accountsLoaded]);
 
   const debouncedSearch = useDebounce(searchTerm, 300);
   const intervalLabel = useMemo(() => intervalDisplayLabel(interval), [interval]);
@@ -91,21 +102,51 @@ export default function TransactionsPage() {
   );
 
   const loadAccounts = useCallback(async () => {
+    setAccountsLoaded(false);
     try {
       const response = await fetchAccounts();
       setAccounts(response.accounts || []);
     } catch (error) {
       pushToast({ type: 'danger', message: normalizeApiError(error) });
+    } finally {
+      setAccountsLoaded(true);
     }
   }, [pushToast]);
+
+  useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
+    // Keep list position/filters only when returning with browser back.
+    if (navigationType === 'POP') return;
+
+    setInterval(createDefaultIntervalState());
+    setType('');
+    setAccountId('');
+    setSearchTerm('');
+    setSearchOpen(false);
+  }, [navigationType, setAccountId, setInterval, setSearchOpen, setSearchTerm, setType]);
+
+  useEffect(() => {
+    if (String(type) !== normalizedType) {
+      setType(normalizedType);
+    }
+  }, [normalizedType, setType, type]);
+
+  useEffect(() => {
+    const raw = String(accountId || '').trim();
+    if (accountsLoaded && raw && normalizedAccountId === '') {
+      setAccountId('');
+    }
+  }, [accountId, accountsLoaded, normalizedAccountId, setAccountId]);
 
   const transactionQuery = useMemo(
     () => ({
       ...(intervalDateRange(interval) || {}),
-      type,
-      account_id: accountId
+      type: normalizedType,
+      account_id: normalizedAccountId
     }),
-    [accountId, interval, type]
+    [interval, normalizedAccountId, normalizedType]
   );
 
   const onTransactionError = useCallback(
@@ -179,7 +220,7 @@ export default function TransactionsPage() {
           <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Type</p>
           <HorizontalSelector
             items={typeOptions}
-            selected={type}
+            selected={normalizedType}
             onSelect={setType}
             iconKey={(item) => item.icon}
           />
@@ -187,7 +228,7 @@ export default function TransactionsPage() {
 
         <div>
           <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Account</p>
-          <AccountStripSelector items={accountOptions} selected={accountId} onSelect={setAccountId} />
+          <AccountStripSelector items={accountOptions} selected={normalizedAccountId} onSelect={setAccountId} />
         </div>
 
         <div className="grid grid-cols-2 gap-2">

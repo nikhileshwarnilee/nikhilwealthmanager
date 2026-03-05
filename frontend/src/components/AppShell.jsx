@@ -30,7 +30,6 @@ export default function AppShell({
   const location = useLocation();
   const swipeStartRef = useRef(null);
   const mainRef = useRef(null);
-  const scrollStateKey = `route-scroll:${location.pathname}${location.search}`;
   const { pullDistance, refreshing } = usePullToRefresh(
     async () => {
       if (onRefresh) {
@@ -96,65 +95,9 @@ export default function AppShell({
 
   useEffect(() => {
     const node = mainRef.current;
-    if (!node || !contentScrollable) return undefined;
-
-    let restoreRafA = 0;
-    let restoreRafB = 0;
-    let saveRaf = 0;
-
-    const restoreScroll = () => {
-      try {
-        const raw = sessionStorage.getItem(scrollStateKey);
-        if (!raw) return;
-        const next = Number(raw);
-        if (!Number.isFinite(next) || next < 0) return;
-        node.scrollTop = next;
-      } catch (error) {
-        // Ignore unavailable storage.
-      }
-    };
-
-    const saveScroll = () => {
-      try {
-        sessionStorage.setItem(scrollStateKey, String(node.scrollTop));
-      } catch (error) {
-        // Ignore unavailable storage.
-      }
-    };
-
-    const onScroll = () => {
-      if (saveRaf) return;
-      saveRaf = window.requestAnimationFrame(() => {
-        saveRaf = 0;
-        saveScroll();
-      });
-    };
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        saveScroll();
-      }
-    };
-
-    restoreRafA = window.requestAnimationFrame(() => {
-      restoreScroll();
-      restoreRafB = window.requestAnimationFrame(restoreScroll);
-    });
-
-    node.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('beforeunload', saveScroll);
-    document.addEventListener('visibilitychange', onVisibilityChange);
-
-    return () => {
-      saveScroll();
-      node.removeEventListener('scroll', onScroll);
-      window.removeEventListener('beforeunload', saveScroll);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      if (restoreRafA) window.cancelAnimationFrame(restoreRafA);
-      if (restoreRafB) window.cancelAnimationFrame(restoreRafB);
-      if (saveRaf) window.cancelAnimationFrame(saveRaf);
-    };
-  }, [contentScrollable, scrollStateKey]);
+    if (!node || !contentScrollable) return;
+    node.scrollTop = 0;
+  }, [contentScrollable, location.pathname, location.search]);
 
   return (
     <div className="app-container">

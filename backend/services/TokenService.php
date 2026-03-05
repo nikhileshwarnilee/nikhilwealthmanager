@@ -74,21 +74,28 @@ final class TokenService
             return null;
         }
 
-        $pdo = db();
-        $pdo->beginTransaction();
-        try {
-            $revokeStmt = $pdo->prepare('UPDATE refresh_tokens SET revoked_at = NOW() WHERE id = :id');
-            $revokeStmt->execute([':id' => (int) $row['id']]);
-            $newToken = self::issueRefreshToken((int) $row['user_id']);
-            $pdo->commit();
-            return [
-                'user_id' => (int) $row['user_id'],
-                'refresh_token' => $newToken,
-            ];
-        } catch (Throwable $exception) {
-            $pdo->rollBack();
-            throw $exception;
-        }
+        // Keep refresh token stable across refresh calls to avoid multi-tab race invalidations.
+        $ttl = (int) env('REFRESH_TOKEN_TTL', '315360000');
+        $nextExpiry = date('Y-m-d H:i:s', time() + $ttl);
+        $touchStmt = db()->prepare(
+            'UPDATE refresh_tokens
+             SET expires_at = :expires_at,
+                 user_agent = :user_agent,
+                 ip_address = :ip_address
+             WHERE id = :id
+               AND revoked_at IS NULL'
+        );
+        $touchStmt->execute([
+            ':expires_at' => $nextExpiry,
+            ':user_agent' => Request::userAgent(),
+            ':ip_address' => Request::ip(),
+            ':id' => (int) $row['id'],
+        ]);
+
+        return [
+            'user_id' => (int) $row['user_id'],
+            'refresh_token' => $refreshToken,
+        ];
     }
 
     public static function revokeRefreshToken(string $refreshToken): void

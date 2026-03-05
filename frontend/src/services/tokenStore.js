@@ -1,21 +1,32 @@
-import { readStorage, removeStorage, writeStorage } from '../utils/storage';
+let authSessionCache = {
+  accessToken: null,
+  refreshToken: null,
+  user: null
+};
 
-const AUTH_KEY = 'expense_manager_auth_v2';
+function normalizeSession(session) {
+  const raw = session && typeof session === 'object' ? session : {};
+  return {
+    accessToken: raw.accessToken || null,
+    refreshToken: raw.refreshToken || null,
+    user: raw.user || null
+  };
+}
 
 export function getAuthSession() {
-  return readStorage(AUTH_KEY, {
-    accessToken: null,
-    refreshToken: null,
-    user: null
-  });
+  return normalizeSession(authSessionCache);
 }
 
 export function setAuthSession(session) {
-  writeStorage(AUTH_KEY, session);
+  authSessionCache = normalizeSession(session);
 }
 
 export function clearAuthSession() {
-  removeStorage(AUTH_KEY);
+  authSessionCache = {
+    accessToken: null,
+    refreshToken: null,
+    user: null
+  };
 }
 
 export function getAccessToken() {
@@ -25,4 +36,3 @@ export function getAccessToken() {
 export function getRefreshToken() {
   return getAuthSession()?.refreshToken || null;
 }
-

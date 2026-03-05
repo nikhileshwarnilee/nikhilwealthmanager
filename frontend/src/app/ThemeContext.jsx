@@ -1,11 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { readStorage, writeStorage } from '../utils/storage';
 
 const ThemeContext = createContext(null);
-const THEME_KEY = 'expense_manager_theme';
 
 export function ThemeProvider({ children }) {
-  const [darkMode, setDarkMode] = useState(() => Boolean(readStorage(THEME_KEY, false)));
+  const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
     if (darkMode) {
@@ -15,7 +13,6 @@ export function ThemeProvider({ children }) {
       document.documentElement.classList.remove('dark');
       document.documentElement.style.colorScheme = 'light';
     }
-    writeStorage(THEME_KEY, darkMode);
   }, [darkMode]);
 
   const value = useMemo(
@@ -37,4 +34,3 @@ export function useTheme() {
   }
   return context;
 }
-

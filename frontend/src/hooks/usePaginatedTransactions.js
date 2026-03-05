@@ -1,23 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { fetchTransactions } from '../services/transactionService';
-
-const paginationCache = new Map();
-const paginationCacheOrder = [];
-const MAX_PAGINATION_CACHE_ENTRIES = 80;
-
-function setPaginationCache(key, value) {
-  if (!paginationCache.has(key)) {
-    paginationCacheOrder.push(key);
-    if (paginationCacheOrder.length > MAX_PAGINATION_CACHE_ENTRIES) {
-      const staleKey = paginationCacheOrder.shift();
-      if (staleKey) {
-        paginationCache.delete(staleKey);
-      }
-    }
-  }
-  paginationCache.set(key, value);
-}
+import {
+  getPaginatedTransactionCache,
+  setPaginatedTransactionCache
+} from '../state/paginatedTransactionCache';
 
 function toStableQuerySignature(query) {
   if (!query || typeof query !== 'object') return '';
@@ -110,7 +97,7 @@ export function usePaginatedTransactions(query, { pageSize = 100, onError, enabl
       return;
     }
 
-    const cached = paginationCache.get(cacheKey);
+    const cached = getPaginatedTransactionCache(cacheKey);
     if (cached?.loaded) {
       setTransactions(cached.transactions || []);
       setTotalCount(Number(cached.totalCount || 0));
@@ -132,7 +119,7 @@ export function usePaginatedTransactions(query, { pageSize = 100, onError, enabl
 
   useEffect(() => {
     if (!enabled || !loadedOnceRef.current) return;
-    setPaginationCache(cacheKey, {
+    setPaginatedTransactionCache(cacheKey, {
       transactions,
       totalCount,
       hasMore,

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 final class BalanceRecalculationService
 {
-    public static function recalculate(int $userId, ?PDO $pdo = null, bool $enforceNonNegative = true): void
+    public static function recalculate(int $userId, ?PDO $pdo = null, bool $enforceNonNegative = true): array
     {
         $db = $pdo ?? db();
 
@@ -91,6 +91,11 @@ final class BalanceRecalculationService
                 ':user_id' => $userId,
             ]);
         }
+
+        return [
+            'balances' => $balances,
+            'account_meta' => $accountMeta,
+        ];
     }
 
     private static function buildAccountChanges(array $txn): array

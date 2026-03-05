@@ -11,8 +11,14 @@ final class TransactionService
         $pdo->beginTransaction();
 
         try {
+            $balanceSnapshot = self::snapshotAccountBalances($pdo, $userId);
             $id = self::insertTransaction($pdo, $userId, $data);
-            BalanceRecalculationService::recalculate($userId, $pdo);
+            $recalculated = BalanceRecalculationService::recalculate($userId, $pdo, false);
+            self::assertNonCreditFinalBalances(
+                $balanceSnapshot,
+                (array) ($recalculated['balances'] ?? []),
+                (array) ($recalculated['account_meta'] ?? [])
+            );
             $pdo->commit();
 
             return self::findById($id, $userId);
@@ -28,6 +34,7 @@ final class TransactionService
         $pdo->beginTransaction();
 
         try {
+            $balanceSnapshot = self::snapshotAccountBalances($pdo, $userId);
             $existing = self::findRawById($transactionId, $userId, true, $pdo);
             if (!$existing || (int) ($existing['is_deleted'] ?? 0) === 1) {
                 Response::error('Transaction not found.', 404);
@@ -71,7 +78,12 @@ final class TransactionService
                 ':user_id' => $userId,
             ]);
 
-            BalanceRecalculationService::recalculate($userId, $pdo);
+            $recalculated = BalanceRecalculationService::recalculate($userId, $pdo, false);
+            self::assertNonCreditFinalBalances(
+                $balanceSnapshot,
+                (array) ($recalculated['balances'] ?? []),
+                (array) ($recalculated['account_meta'] ?? [])
+            );
             $pdo->commit();
 
             return self::findById($transactionId, $userId);
@@ -87,6 +99,7 @@ final class TransactionService
         $pdo->beginTransaction();
 
         try {
+            $balanceSnapshot = self::snapshotAccountBalances($pdo, $userId);
             $existing = self::findRawById($transactionId, $userId, true, $pdo);
             if (!$existing || (int) ($existing['is_deleted'] ?? 0) === 1) {
                 Response::error('Transaction not found.', 404);
@@ -104,7 +117,12 @@ final class TransactionService
             );
             $stmt->execute([':id' => $transactionId, ':user_id' => $userId]);
 
-            BalanceRecalculationService::recalculate($userId, $pdo);
+            $recalculated = BalanceRecalculationService::recalculate($userId, $pdo, false);
+            self::assertNonCreditFinalBalances(
+                $balanceSnapshot,
+                (array) ($recalculated['balances'] ?? []),
+                (array) ($recalculated['account_meta'] ?? [])
+            );
             $pdo->commit();
         } catch (Throwable $exception) {
             $pdo->rollBack();
@@ -341,6 +359,46 @@ final class TransactionService
     {
         return (string) ($transaction['type'] ?? '') === 'opening_adjustment'
             || (string) ($transaction['reference_type'] ?? '') === 'system';
+    }
+
+    private static function snapshotAccountBalances(PDO $pdo, int $userId): array
+    {
+        $stmt = $pdo->prepare(
+            'SELECT id, current_balance
+             FROM accounts
+             WHERE user_id = :user_id
+               AND is_deleted = 0'
+        );
+        $stmt->execute([':user_id' => $userId]);
+
+        $snapshot = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $snapshot[(int) $row['id']] = round((float) ($row['current_balance'] ?? 0), 2);
+        }
+
+        return $snapshot;
+    }
+
+    private static function assertNonCreditFinalBalances(array $beforeBalances, array $afterBalances, array $accountMeta): void
+    {
+        foreach ($afterBalances as $accountId => $afterBalanceRaw) {
+            $id = (int) $accountId;
+            $meta = $accountMeta[$id] ?? [];
+            if ((string) ($meta['type'] ?? '') === 'credit') {
+                continue;
+            }
+
+            $beforeBalance = round((float) ($beforeBalances[$id] ?? 0), 2);
+            $afterBalance = round((float) $afterBalanceRaw, 2);
+
+            $wasNonNegative = $beforeBalance >= 0;
+            $isNegativeNow = $afterBalance < 0;
+            $worsenedNegative = $beforeBalance < 0 && $afterBalance < $beforeBalance;
+            if (($wasNonNegative && $isNegativeNow) || $worsenedNegative) {
+                $accountName = (string) ($meta['name'] ?? ('#' . $id));
+                Response::error('Insufficient balance in account: ' . $accountName, 422);
+            }
+        }
     }
 
     private static function assertAccount(int $accountId, int $userId, ?PDO $pdo = null): array

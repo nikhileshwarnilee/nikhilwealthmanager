@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useNavigationType, useSearchParams } from 'react-router-dom';
 import AppShell from '../../components/AppShell';
 import CollapsibleIntervalSection from '../../components/CollapsibleIntervalSection';
 import EmptyState from '../../components/EmptyState';
@@ -68,6 +68,7 @@ function AccountStripSelector({ items, selected, onSelect }) {
 
 export default function FullHistoryPage() {
   const navigate = useNavigate();
+  const navigationType = useNavigationType();
   const { pushToast } = useToast();
   const [params, setParams] = useSearchParams();
   const [searchOpen, setSearchOpen] = useRouteState('history-search-open', false);
@@ -79,8 +80,18 @@ export default function FullHistoryPage() {
   const [type, setType] = useRouteState('history-type-filter', params.get('type') || '');
   const [accountId, setAccountId] = useRouteState('history-account-filter', params.get('account_id') || '');
   const [accounts, setAccounts] = useState([]);
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
   const paramsString = params.toString();
   const loadMoreRef = useRef(null);
+  const initializedRef = useRef(false);
+  const allowedTypeValues = useMemo(() => new Set(typeOptions.map((option) => String(option.value))), []);
+  const normalizedType = allowedTypeValues.has(String(type)) ? String(type) : '';
+  const normalizedAccountId = useMemo(() => {
+    const raw = String(accountId || '').trim();
+    if (!raw) return '';
+    if (!accountsLoaded) return raw;
+    return accounts.some((account) => String(account.id) === raw) ? raw : '';
+  }, [accountId, accounts, accountsLoaded]);
 
   const debouncedSearch = useDebounce(search, 350);
   const intervalLabel = useMemo(() => intervalDisplayLabel(interval), [interval]);
@@ -98,21 +109,50 @@ export default function FullHistoryPage() {
   );
 
   const loadAccounts = useCallback(async () => {
+    setAccountsLoaded(false);
     try {
       const response = await fetchAccounts();
       setAccounts(response.accounts || []);
     } catch (error) {
       pushToast({ type: 'danger', message: normalizeApiError(error) });
+    } finally {
+      setAccountsLoaded(true);
     }
   }, [pushToast]);
+
+  useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
+    if (navigationType === 'POP') return;
+
+    setInterval(parseIntervalFromParams(params) || createDefaultIntervalState());
+    setType(String(params.get('type') || '').trim());
+    setAccountId(String(params.get('account_id') || '').trim());
+    setSearch('');
+    setSearchOpen(false);
+  }, [navigationType, params, setAccountId, setInterval, setSearch, setSearchOpen, setType]);
+
+  useEffect(() => {
+    if (String(type) !== normalizedType) {
+      setType(normalizedType);
+    }
+  }, [normalizedType, setType, type]);
+
+  useEffect(() => {
+    const raw = String(accountId || '').trim();
+    if (accountsLoaded && raw && normalizedAccountId === '') {
+      setAccountId('');
+    }
+  }, [accountId, accountsLoaded, normalizedAccountId, setAccountId]);
 
   const transactionQuery = useMemo(
     () => ({
       ...(intervalDateRange(interval) || {}),
-      type,
-      account_id: accountId
+      type: normalizedType,
+      account_id: normalizedAccountId
     }),
-    [accountId, interval, type]
+    [interval, normalizedAccountId, normalizedType]
   );
 
   const onTransactionError = useCallback(
@@ -148,12 +188,12 @@ export default function FullHistoryPage() {
     Object.entries(intervalToQueryParams(interval)).forEach(([key, value]) => {
       next.set(key, value);
     });
-    if (type) next.set('type', type);
-    if (accountId) next.set('account_id', accountId);
+    if (normalizedType) next.set('type', normalizedType);
+    if (normalizedAccountId) next.set('account_id', normalizedAccountId);
     if (next.toString() !== paramsString) {
       setParams(next, { replace: true });
     }
-  }, [interval, type, accountId, paramsString, setParams]);
+  }, [interval, normalizedAccountId, normalizedType, paramsString, setParams]);
   useInfiniteScroll(loadMoreRef, loadMore, hasMore && !loading && !loadingMore);
 
   const filteredTransactions = useMemo(() => {
@@ -201,7 +241,7 @@ export default function FullHistoryPage() {
           <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Type</p>
           <HorizontalSelector
             items={typeOptions}
-            selected={type}
+            selected={normalizedType}
             onSelect={setType}
             iconKey={(item) => item.icon}
           />
@@ -209,7 +249,7 @@ export default function FullHistoryPage() {
 
         <div>
           <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Account</p>
-          <AccountStripSelector items={accountOptions} selected={accountId} onSelect={setAccountId} />
+          <AccountStripSelector items={accountOptions} selected={normalizedAccountId} onSelect={setAccountId} />
         </div>
 
         <div className="grid grid-cols-1 gap-2">
