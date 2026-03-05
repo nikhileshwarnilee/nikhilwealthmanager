@@ -1,11 +1,12 @@
 import axios from 'axios';
 import { clearAuthSession, getAccessToken, getRefreshToken, getAuthSession, setAuthSession } from './tokenStore';
+import { API_BASE } from '../config/api';
 
 const appBaseRaw = import.meta.env.BASE_URL || '/';
 const appBase = appBaseRaw.endsWith('/') ? appBaseRaw.slice(0, -1) : appBaseRaw;
 const inferredApiBase = appBase ? `${appBase}/api` : '/api';
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || inferredApiBase;
+export const API_BASE_URL = API_BASE || inferredApiBase;
 
 export const http = axios.create({
   baseURL: API_BASE_URL,

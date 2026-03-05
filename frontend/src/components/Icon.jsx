@@ -1,6 +1,8 @@
+import { API_BASE } from '../config/api';
+
 const appBaseRaw = import.meta.env.BASE_URL || '/';
 const appBase = appBaseRaw.endsWith('/') ? appBaseRaw.slice(0, -1) : appBaseRaw;
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (appBase ? `${appBase}/api` : '/api');
+const API_BASE_URL = API_BASE || (appBase ? `${appBase}/api` : '/api');
 const PUBLIC_BASE_URL = API_BASE_URL.replace(/\/api\/?$/, '');
 
 function looksLikeCustomIcon(value) {
