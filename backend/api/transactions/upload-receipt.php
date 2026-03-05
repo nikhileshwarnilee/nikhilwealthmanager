@@ -59,7 +59,9 @@ if (!move_uploaded_file($tmpPath, $absolutePath)) {
 }
 
 $relativePath = 'uploads/receipts/' . $userId . '/' . $filename;
-$publicUrl = '/nikhilwealthmanager/backend/' . $relativePath;
+$appUrl = rtrim((string) env('APP_URL', ''), '/');
+$backendBase = $appUrl !== '' ? ($appUrl . '/backend/') : '/backend/';
+$publicUrl = $backendBase . $relativePath;
 
 Response::success('Receipt uploaded.', [
     'receipt_path' => $relativePath,
@@ -67,4 +69,3 @@ Response::success('Receipt uploaded.', [
     'mime_type' => $mime,
     'size' => $size,
 ]);
-

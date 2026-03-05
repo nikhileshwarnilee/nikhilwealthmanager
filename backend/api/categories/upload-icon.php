@@ -60,7 +60,9 @@ if (!move_uploaded_file($tmpPath, $absolutePath)) {
 }
 
 $relativePath = 'uploads/category-icons/' . $userId . '/' . $filename;
-$publicUrl = '/nikhilwealthmanager/backend/' . $relativePath;
+$appUrl = rtrim((string) env('APP_URL', ''), '/');
+$backendBase = $appUrl !== '' ? ($appUrl . '/backend/') : '/backend/';
+$publicUrl = $backendBase . $relativePath;
 
 Response::success('Icon uploaded.', [
     'icon_path' => $relativePath,

@@ -76,7 +76,9 @@ if (!$row) {
 $receiptPath = $row['receipt_path'] ?: null;
 $receiptUrl = null;
 if ($receiptPath) {
-    $receiptUrl = '/nikhilwealthmanager/backend/' . ltrim(str_replace('\\', '/', (string) $receiptPath), '/');
+    $appUrl = rtrim((string) env('APP_URL', ''), '/');
+    $backendBase = $appUrl !== '' ? ($appUrl . '/backend/') : '/backend/';
+    $receiptUrl = $backendBase . ltrim(str_replace('\\', '/', (string) $receiptPath), '/');
 }
 
 $accountName = null;
