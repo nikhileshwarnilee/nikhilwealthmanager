@@ -1,11 +1,18 @@
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
-import Icon, { categoryIconKey } from './Icon';
+import Icon, { assetIconKey, categoryIconKey } from './Icon';
 import { formatCurrency, formatDate } from '../utils/format';
 import { hapticTap } from '../utils/haptics';
 
 const SWIPE_WIDTH = 120;
 
 function TransactionItem({ txn, currency = 'INR', onEdit, onDelete, onView }) {
+  const isAssetOpeningEntry =
+    txn.type === 'asset' &&
+    Boolean(txn.to_asset_type_id) &&
+    !txn.from_account_id &&
+    !txn.to_account_id &&
+    !txn.from_asset_type_id;
+
   const [offset, setOffset] = useState(0);
   const [locked, setLocked] = useState(false);
   const startX = useRef(0);
@@ -17,6 +24,10 @@ function TransactionItem({ txn, currency = 'INR', onEdit, onDelete, onView }) {
       ? 'text-success'
       : txn.type === 'expense'
         ? 'text-danger'
+        : txn.type === 'asset'
+          ? txn.to_asset_type_id
+            ? 'text-primary'
+            : 'text-warning'
         : txn.type === 'opening_adjustment'
           ? Number(txn.amount || 0) >= 0
             ? 'text-success'
@@ -28,18 +39,38 @@ function TransactionItem({ txn, currency = 'INR', onEdit, onDelete, onView }) {
   const title =
     txn.type === 'opening_adjustment'
       ? 'Opening adjustment'
+      : txn.type === 'asset'
+        ? isAssetOpeningEntry
+          ? `Opening in ${txn.to_asset_type_name || 'Asset'}`
+          : txn.to_asset_type_name
+          ? `Invest in ${txn.to_asset_type_name}`
+          : txn.from_asset_type_name
+            ? `Redeem ${txn.from_asset_type_name}`
+            : 'Asset movement'
       : txn.category_name || `${txn.type[0].toUpperCase()}${txn.type.slice(1)}`;
   const accountText =
     txn.type === 'income'
       ? `To ${txn.to_account_name || '-'}`
       : txn.type === 'expense'
         ? `From ${txn.from_account_name || '-'}`
+      : txn.type === 'asset'
+          ? isAssetOpeningEntry
+            ? `Added to ${txn.to_asset_type_name || '-'}`
+            : txn.to_asset_type_name
+            ? `${txn.from_account_name || '-'} to ${txn.to_asset_type_name}`
+            : `${txn.from_asset_type_name || '-'} to ${txn.to_account_name || '-'}`
         : txn.type === 'opening_adjustment'
           ? `Account ${txn.to_account_name || txn.from_account_name || '-'}`
         : `${txn.from_account_name || '-'} to ${txn.to_account_name || '-'}`;
 
   const iconName = useMemo(() => {
     if (txn.type === 'opening_adjustment') return 'accounts';
+    if (txn.type === 'asset') {
+      return assetIconKey({
+        icon: txn.to_asset_type_icon || txn.from_asset_type_icon,
+        name: txn.to_asset_type_name || txn.from_asset_type_name
+      });
+    }
     return categoryIconKey(txn);
   }, [txn]);
   const categoryColor = useMemo(() => {
@@ -47,7 +78,7 @@ function TransactionItem({ txn, currency = 'INR', onEdit, onDelete, onView }) {
     if (!raw) return '';
     return raw;
   }, [txn]);
-  const useCategoryColor = Boolean(categoryColor) && txn.type !== 'transfer' && txn.type !== 'opening_adjustment';
+  const useCategoryColor = Boolean(categoryColor) && txn.type !== 'transfer' && txn.type !== 'opening_adjustment' && txn.type !== 'asset';
 
   const onPointerDown = useCallback(
     (event) => {

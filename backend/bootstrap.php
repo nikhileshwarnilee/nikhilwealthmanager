@@ -17,6 +17,8 @@ require_once __DIR__ . '/services/TokenService.php';
 require_once __DIR__ . '/services/MailService.php';
 require_once __DIR__ . '/services/PasswordResetService.php';
 require_once __DIR__ . '/services/BalanceRecalculationService.php';
+require_once __DIR__ . '/services/SchemaService.php';
+require_once __DIR__ . '/services/AssetService.php';
 require_once __DIR__ . '/services/TransactionService.php';
 require_once __DIR__ . '/services/BudgetService.php';
 require_once __DIR__ . '/services/InsightService.php';
@@ -36,3 +38,5 @@ header('X-XSS-Protection: 1; mode=block');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 header('Expires: 0');
+
+SchemaService::ensureAssetsSchema();

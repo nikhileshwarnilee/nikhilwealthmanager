@@ -24,9 +24,15 @@ $stmt = db()->prepare(
         t.updated_at,
         t.from_account_id,
         t.to_account_id,
+        t.from_asset_type_id,
+        t.to_asset_type_id,
         t.category_id,
         fa.name AS from_account_name,
         ta.name AS to_account_name,
+        fas.name AS from_asset_type_name,
+        fas.icon AS from_asset_type_icon,
+        tas.name AS to_asset_type_name,
+        tas.icon AS to_asset_type_icon,
         c.name AS category_name,
         c.icon AS category_icon,
         c.color AS category_color,
@@ -40,6 +46,14 @@ $stmt = db()->prepare(
        ON ta.id = t.to_account_id
       AND ta.user_id = t.user_id
       AND ta.is_deleted = 0
+     LEFT JOIN asset_types fas
+       ON fas.id = t.from_asset_type_id
+      AND fas.user_id = t.user_id
+      AND fas.is_deleted = 0
+     LEFT JOIN asset_types tas
+       ON tas.id = t.to_asset_type_id
+      AND tas.user_id = t.user_id
+      AND tas.is_deleted = 0
      LEFT JOIN categories c
        ON c.id = t.category_id
       AND c.user_id = t.user_id
@@ -72,6 +86,14 @@ if ((string) $row['type'] === 'income') {
     $accountName = $row['from_account_name'] ?: null;
 } elseif ((string) $row['type'] === 'opening_adjustment') {
     $accountName = $row['to_account_name'] ?: $row['from_account_name'] ?: null;
+} elseif ((string) $row['type'] === 'asset') {
+    if ($row['to_asset_type_name'] && $row['from_account_name']) {
+        $accountName = trim((string) $row['from_account_name'] . ' -> ' . (string) $row['to_asset_type_name']);
+    } elseif ($row['from_asset_type_name'] && $row['to_account_name']) {
+        $accountName = trim((string) $row['from_asset_type_name'] . ' -> ' . (string) $row['to_account_name']);
+    } else {
+        $accountName = $row['to_asset_type_name'] ?: $row['from_asset_type_name'] ?: null;
+    }
 } else {
     $from = (string) ($row['from_account_name'] ?? '');
     $to = (string) ($row['to_account_name'] ?? '');
@@ -102,6 +124,16 @@ Response::success('Transaction view fetched.', [
             'to' => [
                 'id' => $row['to_account_id'] !== null ? (int) $row['to_account_id'] : null,
                 'name' => $row['to_account_name'] ?: null,
+            ],
+            'from_asset' => [
+                'id' => $row['from_asset_type_id'] !== null ? (int) $row['from_asset_type_id'] : null,
+                'name' => $row['from_asset_type_name'] ?: null,
+                'icon' => $row['from_asset_type_icon'] ?: null,
+            ],
+            'to_asset' => [
+                'id' => $row['to_asset_type_id'] !== null ? (int) $row['to_asset_type_id'] : null,
+                'name' => $row['to_asset_type_name'] ?: null,
+                'icon' => $row['to_asset_type_icon'] ?: null,
             ],
         ],
         'date' => (string) $row['transaction_date'],

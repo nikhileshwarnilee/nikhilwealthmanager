@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import AppShell from '../../components/AppShell';
 import HorizontalSelector from '../../components/HorizontalSelector';
-import Icon, { categoryIconKey } from '../../components/Icon';
+import Icon, { assetIconKey, categoryIconKey } from '../../components/Icon';
 import { useToast } from '../../app/ToastContext';
 import { API_BASE_URL, normalizeApiError } from '../../services/http';
 import { fetchAccounts } from '../../services/accountService';
+import { fetchAssets } from '../../services/assetService';
 import { fetchCategories } from '../../services/categoryService';
 import { createTransaction, fetchTransactions, updateTransaction, uploadTransactionReceipt } from '../../services/transactionService';
 import { datetimeLocalNow, formatCurrency } from '../../utils/format';
@@ -15,6 +16,8 @@ const initialForm = {
   amount: '',
   from_account_id: '',
   to_account_id: '',
+  from_asset_type_id: '',
+  to_asset_type_id: '',
   category_id: '',
   note: '',
   location: '',
@@ -27,7 +30,14 @@ const typeOptions = [
   { value: 'expense', label: 'Expense', icon: 'expense' },
   { value: 'income', label: 'Income', icon: 'income' },
   { value: 'transfer', label: 'Transfer', icon: 'transfer' },
+  { value: 'asset', label: 'Asset / Investment', icon: 'asset' },
   { value: 'people', label: 'People', icon: 'people' }
+];
+
+const assetActionOptions = [
+  { value: 'invest', label: 'Invest' },
+  { value: 'redeem', label: 'Redeem' },
+  { value: 'opening', label: 'Opening / Gift' }
 ];
 
 const peopleActionOptions = [
@@ -80,8 +90,10 @@ export default function TransactionFormPage() {
   const [saving, setSaving] = useState(false);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const [mode, setMode] = useState('expense');
+  const [assetAction, setAssetAction] = useState('invest');
   const [peopleAction, setPeopleAction] = useState('lend');
   const [accounts, setAccounts] = useState([]);
+  const [assetTypes, setAssetTypes] = useState([]);
   const [categories, setCategories] = useState([]);
   const [form, setForm] = useState(initialForm);
   const fileInputRef = useRef(null);
@@ -90,24 +102,36 @@ export default function TransactionFormPage() {
     const run = async () => {
       setLoading(true);
       try {
-        const [accRes, catRes] = await Promise.all([fetchAccounts(), fetchCategories()]);
+        const [accRes, catRes, assetRes] = await Promise.all([fetchAccounts(), fetchCategories(), fetchAssets()]);
         setAccounts(accRes.accounts || []);
         setCategories(catRes.categories || []);
+        setAssetTypes(assetRes.assets || []);
 
         if (editing) {
           const txRes = await fetchTransactions({ id, page: 1, limit: 1 });
           const tx = txRes.transactions?.[0];
           if (!tx) throw new Error('Transaction not found.');
           const isPeopleTransfer = tx.type === 'transfer' && isPeopleReferenceType(tx.reference_type);
-          const inferredMode = isPeopleTransfer ? 'people' : tx.type;
+          const isAssetMovement = tx.type === 'asset';
+          const inferredMode = isPeopleTransfer ? 'people' : isAssetMovement ? 'asset' : tx.type;
           setMode(inferredMode);
           if (isPeopleTransfer) {
             setPeopleAction(derivePeopleAction(tx.reference_type));
+          }
+          if (isAssetMovement) {
+            const isDirectAssetEntry = Boolean(tx.to_asset_type_id) && !tx.from_account_id && !tx.to_account_id && !tx.from_asset_type_id;
+            if (isDirectAssetEntry || String(tx.reference_type || '') === 'asset_opening') {
+              setAssetAction('opening');
+            } else {
+              setAssetAction(tx.to_asset_type_id ? 'invest' : 'redeem');
+            }
           }
           setForm({
             amount: String(tx.amount || ''),
             from_account_id: tx.from_account_id ? String(tx.from_account_id) : '',
             to_account_id: tx.to_account_id ? String(tx.to_account_id) : '',
+            from_asset_type_id: tx.from_asset_type_id ? String(tx.from_asset_type_id) : '',
+            to_asset_type_id: tx.to_asset_type_id ? String(tx.to_asset_type_id) : '',
             category_id: tx.category_id ? String(tx.category_id) : '',
             note: tx.note || '',
             location: tx.location || '',
@@ -128,7 +152,7 @@ export default function TransactionFormPage() {
   }, [editing, id, pushToast]);
 
   const visibleCategories = useMemo(() => {
-    if (mode === 'transfer' || mode === 'people') return [];
+    if (mode === 'transfer' || mode === 'people' || mode === 'asset') return [];
     return categories.filter((item) => item.type === mode);
   }, [categories, mode]);
 
@@ -141,6 +165,17 @@ export default function TransactionFormPage() {
         balance: item.current_balance
       })),
     [accounts]
+  );
+  const assetSelectorData = useMemo(
+    () =>
+      assetTypes.map((item) => ({
+        value: String(item.id),
+        label: item.name,
+        icon: item.icon,
+        invested: Number(item.invested_amount || 0),
+        current: Number(item.current_value || 0)
+      })),
+    [assetTypes]
   );
 
   const regularAccountOptions = useMemo(
@@ -157,30 +192,50 @@ export default function TransactionFormPage() {
     () => regularToPeopleActions.has(peopleAction),
     [peopleAction]
   );
+  const assetFlowIsAccountToAsset = useMemo(
+    () => assetAction === 'invest',
+    [assetAction]
+  );
+  const assetFlowIsAssetToAccount = useMemo(
+    () => assetAction === 'redeem',
+    [assetAction]
+  );
 
   const fromAccountOptions = useMemo(() => {
+    if (mode === 'asset') {
+      return assetFlowIsAccountToAsset ? regularAccountOptions : [];
+    }
     if (mode !== 'people') return regularAccountOptions;
     return peopleFlowIsRegularToPeople ? regularAccountOptions : peopleAccountOptions;
-  }, [mode, peopleAccountOptions, peopleFlowIsRegularToPeople, regularAccountOptions]);
+  }, [assetFlowIsAccountToAsset, mode, peopleAccountOptions, peopleFlowIsRegularToPeople, regularAccountOptions]);
 
   const toAccountOptions = useMemo(() => {
+    if (mode === 'asset') {
+      return assetFlowIsAssetToAccount ? regularAccountOptions : [];
+    }
     if (mode !== 'people') return regularAccountOptions;
     return peopleFlowIsRegularToPeople ? peopleAccountOptions : regularAccountOptions;
-  }, [mode, peopleAccountOptions, peopleFlowIsRegularToPeople, regularAccountOptions]);
+  }, [assetFlowIsAssetToAccount, mode, peopleAccountOptions, peopleFlowIsRegularToPeople, regularAccountOptions]);
 
   const fromAccountTitle = useMemo(() => {
+    if (mode === 'asset') {
+      return assetFlowIsAccountToAsset ? 'From account' : 'From asset';
+    }
     if (mode !== 'people') return 'From account';
     if (peopleAction === 'borrow') return 'Borrow from';
     if (peopleAction === 'receive') return 'Receive from';
     return 'From account';
-  }, [mode, peopleAction]);
+  }, [assetFlowIsAccountToAsset, mode, peopleAction]);
 
   const toAccountTitle = useMemo(() => {
+    if (mode === 'asset') {
+      return assetFlowIsAccountToAsset ? 'To asset' : 'To account';
+    }
     if (mode !== 'people') return 'To account';
     if (peopleAction === 'lend') return 'Lend to';
     if (peopleAction === 'pay') return 'Pay to';
     return 'To account';
-  }, [mode, peopleAction]);
+  }, [assetFlowIsAccountToAsset, mode, peopleAction]);
 
   const onTypeSelect = (nextMode) => {
     hapticTap();
@@ -188,11 +243,28 @@ export default function TransactionFormPage() {
     if (nextMode === 'people' && mode !== 'people') {
       setPeopleAction('lend');
     }
+    if (nextMode === 'asset' && mode !== 'asset') {
+      setAssetAction('invest');
+    }
     setForm((prev) => ({
       ...prev,
-      category_id: nextMode === 'transfer' || nextMode === 'people' ? '' : prev.category_id,
-      from_account_id: nextMode === 'people' || mode === 'people' ? '' : prev.from_account_id,
-      to_account_id: nextMode === 'people' || mode === 'people' ? '' : prev.to_account_id
+      category_id: nextMode === 'transfer' || nextMode === 'people' || nextMode === 'asset' ? '' : prev.category_id,
+      from_account_id: nextMode === 'people' || mode === 'people' || nextMode === 'asset' || mode === 'asset' ? '' : prev.from_account_id,
+      to_account_id: nextMode === 'people' || mode === 'people' || nextMode === 'asset' || mode === 'asset' ? '' : prev.to_account_id,
+      from_asset_type_id: nextMode === 'asset' || mode === 'asset' ? '' : prev.from_asset_type_id,
+      to_asset_type_id: nextMode === 'asset' || mode === 'asset' ? '' : prev.to_asset_type_id
+    }));
+  };
+
+  const onAssetActionSelect = (nextAction) => {
+    hapticTap();
+    setAssetAction(nextAction);
+    setForm((prev) => ({
+      ...prev,
+      from_account_id: '',
+      to_account_id: '',
+      from_asset_type_id: '',
+      to_asset_type_id: ''
     }));
   };
 
@@ -207,7 +279,7 @@ export default function TransactionFormPage() {
   };
 
   const onSubmit = async () => {
-    const actualType = mode === 'people' ? 'transfer' : mode;
+    const actualType = mode === 'people' ? 'transfer' : mode === 'asset' ? 'asset' : mode;
     if (!form.amount || Number(form.amount) <= 0) {
       pushToast({ type: 'warning', message: 'Enter a valid amount.' });
       return;
@@ -234,6 +306,18 @@ export default function TransactionFormPage() {
       pushToast({ type: 'warning', message: 'Source and destination must be different.' });
       return;
     }
+    if (actualType === 'asset' && assetAction === 'invest' && (!form.from_account_id || !form.to_asset_type_id)) {
+      pushToast({ type: 'warning', message: 'Choose source account and destination asset.' });
+      return;
+    }
+    if (actualType === 'asset' && assetAction === 'redeem' && (!form.from_asset_type_id || !form.to_account_id)) {
+      pushToast({ type: 'warning', message: 'Choose source asset and destination account.' });
+      return;
+    }
+    if (actualType === 'asset' && assetAction === 'opening' && !form.to_asset_type_id) {
+      pushToast({ type: 'warning', message: 'Choose destination asset for opening/gift entry.' });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -252,13 +336,29 @@ export default function TransactionFormPage() {
         amount: Number(form.amount),
         from_account_id: form.from_account_id || null,
         to_account_id: form.to_account_id || null,
-        category_id: actualType === 'transfer' ? null : form.category_id || null,
+        from_asset_type_id: actualType === 'asset' ? form.from_asset_type_id || null : null,
+        to_asset_type_id: actualType === 'asset' ? form.to_asset_type_id || null : null,
+        category_id: actualType === 'income' || actualType === 'expense' ? form.category_id || null : null,
         note: form.note || '',
         location: form.location || '',
         receipt_path: form.receipt_path || null,
         transaction_date: form.transaction_date ? form.transaction_date.replace('T', ' ') + ':00' : null,
-        reference_type: mode === 'people' ? peopleReferenceType(peopleAction) : 'manual',
-        reference_id: peopleCounterpartyId
+        reference_type:
+          mode === 'people'
+            ? peopleReferenceType(peopleAction)
+            : mode === 'asset'
+              ? assetAction === 'invest'
+                ? 'asset_investment'
+                : assetAction === 'redeem'
+                  ? 'asset_liquidation'
+                  : 'asset_opening'
+              : 'manual',
+        reference_id:
+          mode === 'people'
+            ? peopleCounterpartyId
+            : mode === 'asset'
+              ? Number((assetAction === 'redeem' ? form.from_asset_type_id : form.to_asset_type_id) || 0) || null
+              : null
       };
 
       if (editing) {
@@ -342,7 +442,7 @@ export default function TransactionFormPage() {
         <div className="flex min-h-0 flex-1 flex-col gap-2">
           <section className="card-surface flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-xl p-2 scroll-hidden">
             <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Type</p>
-            <div className="shrink-0 grid grid-cols-2 gap-1 sm:grid-cols-4">
+            <div className="shrink-0 grid grid-cols-2 gap-1 sm:grid-cols-5">
               {typeOptions.map((option) => {
                 const active = mode === option.value;
                 return (
@@ -388,6 +488,36 @@ export default function TransactionFormPage() {
                     );
                   })}
                 </div>
+              </div>
+            ) : mode === 'asset' ? (
+              <div className="shrink-0">
+                <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  Flow
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {assetActionOptions.map((option) => {
+                    const active = assetAction === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all ${
+                          active
+                            ? 'border-primary bg-primary/12 text-primary'
+                            : 'border-slate-200 bg-white text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
+                        }`}
+                        onClick={() => onAssetActionSelect(option.value)}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {assetAction === 'opening' ? (
+                  <p className="mt-2 rounded-xl bg-slate-100 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    Opening / gift entry adds to asset history without debiting any account.
+                  </p>
+                ) : null}
               </div>
             ) : null}
 
@@ -468,11 +598,11 @@ export default function TransactionFormPage() {
               </div>
             ) : (
               <div className="rounded-xl bg-slate-100 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                No category required for {mode === 'people' ? 'people' : 'transfer'} mode.
+                No category required for {mode === 'people' ? 'people' : mode === 'asset' ? 'asset' : 'transfer'} mode.
               </div>
             )}
 
-            {(mode === 'expense' || mode === 'transfer' || mode === 'people') && (
+            {(mode === 'expense' || mode === 'transfer' || mode === 'people' || (mode === 'asset' && assetFlowIsAccountToAsset)) && (
               <div className="shrink-0">
                 <div className="mb-1 flex items-center justify-between">
                   <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -519,7 +649,60 @@ export default function TransactionFormPage() {
               </div>
             )}
 
-            {(mode === 'income' || mode === 'transfer' || mode === 'people') && (
+            {mode === 'asset' ? (
+              <div className="shrink-0">
+                <div className="mb-1 flex items-center justify-between">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    {assetFlowIsAssetToAccount ? 'From asset' : 'To asset'}
+                  </p>
+                  <Link to="/assets/types" className="text-[11px] font-semibold text-primary">
+                    Manage
+                  </Link>
+                </div>
+                {assetSelectorData.length ? (
+                  <div className="overflow-x-auto pr-1 pb-1 scroll-hidden touch-pan-x">
+                    <div className="flex w-max gap-2">
+                      {assetSelectorData.map((item) => {
+                        const idValue = String(item.value);
+                        const selectedId = assetFlowIsAssetToAccount ? form.from_asset_type_id : form.to_asset_type_id;
+                        const active = String(selectedId) === idValue;
+                        return (
+                          <button
+                            key={idValue}
+                            type="button"
+                            className={`w-[106px] rounded-xl border p-1.5 text-center transition-all duration-200 ${
+                              active
+                                ? 'border-primary bg-primary/12 text-primary shadow-card'
+                                : 'border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
+                            }`}
+                            onClick={() => {
+                              hapticTap();
+                              if (assetFlowIsAssetToAccount) {
+                                setForm((prev) => ({ ...prev, from_asset_type_id: idValue }));
+                              } else {
+                                setForm((prev) => ({ ...prev, to_asset_type_id: idValue }));
+                              }
+                            }}
+                          >
+                            <span className="mx-auto mb-1 inline-flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800">
+                              <Icon name={assetIconKey({ icon: item.icon, name: item.label })} size={14} />
+                            </span>
+                            <p className="truncate text-[10px] font-semibold">{item.label}</p>
+                            <p className="truncate text-[10px] text-slate-500 dark:text-slate-400">{formatCurrency(item.current)}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="rounded-xl bg-slate-100 p-2 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                    No asset types found. Create one in Assets / Investments.
+                  </p>
+                )}
+              </div>
+            ) : null}
+
+            {(mode === 'income' || mode === 'transfer' || mode === 'people' || (mode === 'asset' && assetFlowIsAssetToAccount)) && (
               <div className="shrink-0">
                 <div className="mb-1 flex items-center justify-between">
                   <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">

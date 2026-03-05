@@ -41,6 +41,7 @@ $sql = 'SELECT
         COALESCE(SUM(CASE WHEN type = \'income\' THEN amount ELSE 0 END), 0) AS income_total,
         COALESCE(SUM(CASE WHEN type = \'expense\' THEN amount ELSE 0 END), 0) AS expense_total,
         COALESCE(SUM(CASE WHEN type = \'transfer\' THEN amount ELSE 0 END), 0) AS transfer_total,
+        COALESCE(SUM(CASE WHEN type = \'asset\' THEN amount ELSE 0 END), 0) AS asset_total,
         COUNT(*) AS transaction_count
      FROM transactions
      WHERE user_id = :user_id
@@ -63,10 +64,16 @@ $summary = $stmt->fetch() ?: [
 
 $recentSql = 'SELECT
         t.id, t.amount, t.type, t.note, t.running_balance, t.transaction_date,
-        fa.name AS from_account_name, ta.name AS to_account_name, c.name AS category_name
+        t.from_asset_type_id, t.to_asset_type_id,
+        fa.name AS from_account_name, ta.name AS to_account_name,
+        fas.name AS from_asset_type_name, fas.icon AS from_asset_type_icon,
+        tas.name AS to_asset_type_name, tas.icon AS to_asset_type_icon,
+        c.name AS category_name
      FROM transactions t
      LEFT JOIN accounts fa ON fa.id = t.from_account_id AND fa.user_id = t.user_id AND fa.is_deleted = 0
      LEFT JOIN accounts ta ON ta.id = t.to_account_id AND ta.user_id = t.user_id AND ta.is_deleted = 0
+     LEFT JOIN asset_types fas ON fas.id = t.from_asset_type_id AND fas.user_id = t.user_id AND fas.is_deleted = 0
+     LEFT JOIN asset_types tas ON tas.id = t.to_asset_type_id AND tas.user_id = t.user_id AND tas.is_deleted = 0
      LEFT JOIN categories c ON c.id = t.category_id AND c.user_id = t.user_id AND c.is_deleted = 0
      WHERE t.user_id = :user_id
        AND t.is_deleted = 0';
@@ -93,6 +100,7 @@ Response::success('Monthly summary fetched.', [
     'income_total' => $income,
     'expense_total' => $expense,
     'transfer_total' => (float) $summary['transfer_total'],
+    'asset_total' => (float) ($summary['asset_total'] ?? 0),
     'net_total' => round($income - $expense, 2),
     'transaction_count' => (int) $summary['transaction_count'],
     'recent_transactions' => $recentStmt->fetchAll(),

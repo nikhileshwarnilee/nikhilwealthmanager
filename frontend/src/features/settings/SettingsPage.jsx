@@ -316,9 +316,21 @@ export default function SettingsPage() {
             >
               Categories
             </Link>
+            <Link
+              to="/assets"
+              className="rounded-xl bg-slate-100 px-3 py-3 text-center text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            >
+              Assets / Wealth
+            </Link>
+            <Link
+              to="/assets/types"
+              className="rounded-xl bg-slate-100 px-3 py-3 text-center text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            >
+              Asset Types
+            </Link>
             <button
               type="button"
-              className="rounded-xl bg-danger px-3 py-3 text-sm font-semibold text-white"
+              className="col-span-2 rounded-xl bg-danger px-3 py-3 text-sm font-semibold text-white"
               onClick={logout}
             >
               Logout

@@ -341,7 +341,7 @@ export default function AccountsPage() {
       <BottomSheet open={showAdjust} onClose={() => setShowAdjust(false)} title="Adjust Opening Balance">
         <div className="space-y-3">
           <p className="text-xs text-slate-600 dark:text-slate-300">
-            This creates a system transaction of type opening adjustment.
+            This updates opening balance directly. No transaction entry is created.
           </p>
           <input
             type="number"

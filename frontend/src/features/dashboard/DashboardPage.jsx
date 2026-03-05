@@ -9,6 +9,7 @@ import { useToast } from '../../app/ToastContext';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useRouteState } from '../../hooks/useRouteState';
 import { fetchAccounts } from '../../services/accountService';
+import { fetchAssetSummary } from '../../services/assetService';
 import { normalizeApiError } from '../../services/http';
 import { monthlySummary } from '../../services/transactionService';
 import { formatCurrency } from '../../utils/format';
@@ -43,6 +44,7 @@ export default function DashboardPage() {
   const [searchTerm, setSearchTerm] = useRouteState('dashboard-search-term', '');
   const [accounts, setAccounts] = useState([]);
   const [summary, setSummary] = useState(null);
+  const [wealthSummary, setWealthSummary] = useState(null);
   const [recentTransactions, setRecentTransactions] = useState([]);
 
   const intervalLabel = useMemo(() => intervalDisplayLabel(interval), [interval]);
@@ -52,12 +54,14 @@ export default function DashboardPage() {
   const loadDashboard = useCallback(async () => {
     setLoading(true);
     try {
-      const [accountsRes, summaryRes] = await Promise.all([
+      const [accountsRes, summaryRes, wealthRes] = await Promise.all([
         fetchAccounts(),
-        monthlySummary(summaryParams)
+        monthlySummary(summaryParams),
+        fetchAssetSummary()
       ]);
       setAccounts(accountsRes.accounts || []);
       setSummary(summaryRes || null);
+      setWealthSummary(wealthRes || null);
       setRecentTransactions((summaryRes?.recent_transactions || []).slice(0, 5));
     } catch (error) {
       pushToast({ type: 'danger', message: normalizeApiError(error) });
@@ -70,13 +74,15 @@ export default function DashboardPage() {
     loadDashboard();
   }, [loadDashboard]);
 
-  const totalBalance = useMemo(
-    () =>
-      accounts.reduce((sum, account) => {
-        return sum + Number(account.current_balance || 0);
-      }, 0),
-    [accounts]
-  );
+  const totalBalance = useMemo(() => {
+    const reported = Number(wealthSummary?.accounts_total_balance);
+    if (!Number.isNaN(reported)) return reported;
+    return accounts.reduce((sum, account) => {
+      return sum + Number(account.current_balance || 0);
+    }, 0);
+  }, [accounts, wealthSummary?.accounts_total_balance]);
+  const totalAssetValue = Number(wealthSummary?.assets_total_current_value || 0);
+  const netWorth = Number(wealthSummary?.net_worth || totalBalance + totalAssetValue);
 
   const expenseValue = Number(summary?.expense_total || 0);
   const incomeValue = Number(summary?.income_total || 0);
@@ -91,7 +97,7 @@ export default function DashboardPage() {
     const query = debouncedSearch.trim().toLowerCase();
     if (!query) return recentTransactions;
     return recentTransactions.filter((txn) =>
-      [txn.note, txn.category_name, txn.from_account_name, txn.to_account_name, txn.type]
+      [txn.note, txn.category_name, txn.from_account_name, txn.to_account_name, txn.from_asset_type_name, txn.to_asset_type_name, txn.type]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(query))
     );
@@ -115,9 +121,19 @@ export default function DashboardPage() {
     >
       <InstallPrompt />
 
-      <section className="card-surface h-[72px] rounded-xl p-2">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Total Balance</p>
-        <h2 className="mt-0.5 text-xl font-semibold text-slate-900 dark:text-slate-100">{formatCurrency(totalBalance)}</h2>
+      <section className="grid grid-cols-3 gap-2">
+        <div className="card-surface rounded-xl p-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Accounts</p>
+          <h2 className="mt-0.5 text-sm font-semibold text-slate-900 dark:text-slate-100">{formatCurrency(totalBalance)}</h2>
+        </div>
+        <div className="card-surface rounded-xl p-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Assets</p>
+          <h2 className="mt-0.5 text-sm font-semibold text-slate-900 dark:text-slate-100">{formatCurrency(totalAssetValue)}</h2>
+        </div>
+        <div className="card-surface rounded-xl p-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Net Worth</p>
+          <h2 className="mt-0.5 text-sm font-semibold text-slate-900 dark:text-slate-100">{formatCurrency(netWorth)}</h2>
+        </div>
       </section>
 
       <section>

@@ -12,6 +12,7 @@ $pagination = Pagination::fromRequest(20, 100);
 $type = trim((string) Request::query('type', ''));
 $transactionId = Request::query('id', '');
 $accountId = Request::query('account_id', '');
+$assetTypeId = Request::query('asset_type_id', '');
 $categoryId = Request::query('category_id', '');
 $search = Validator::string(Request::query('search', ''), 100);
 $dateFrom = trim((string) Request::query('date_from', ''));
@@ -22,7 +23,7 @@ $params = [':user_id' => $userId];
 $where = ['t.user_id = :user_id', 't.is_deleted = 0'];
 
 if ($type !== '') {
-    $type = Validator::enum($type, ['income', 'expense', 'transfer', 'opening_adjustment'], 'type');
+    $type = Validator::enum($type, ['income', 'expense', 'transfer', 'opening_adjustment', 'asset'], 'type');
     $where[] = 't.type = :type';
     $params[':type'] = $type;
 }
@@ -38,6 +39,13 @@ if ($accountId !== '') {
     $where[] = '(t.from_account_id = :account_from_id OR t.to_account_id = :account_to_id)';
     $params[':account_from_id'] = $accountIdInt;
     $params[':account_to_id'] = $accountIdInt;
+}
+
+if ($assetTypeId !== '') {
+    $assetTypeIdInt = Validator::positiveInt($assetTypeId, 'asset_type_id');
+    $where[] = '(t.from_asset_type_id = :asset_from_id OR t.to_asset_type_id = :asset_to_id)';
+    $params[':asset_from_id'] = $assetTypeIdInt;
+    $params[':asset_to_id'] = $assetTypeIdInt;
 }
 
 if ($categoryId !== '') {
@@ -59,12 +67,14 @@ if ($dateTo !== '') {
 }
 
 if ($search !== '') {
-    $where[] = '(t.note LIKE :search_note OR c.name LIKE :search_category OR fa.name LIKE :search_from OR ta.name LIKE :search_to)';
+    $where[] = '(t.note LIKE :search_note OR c.name LIKE :search_category OR fa.name LIKE :search_from OR ta.name LIKE :search_to OR fas.name LIKE :search_from_asset OR tas.name LIKE :search_to_asset)';
     $searchLike = '%' . $search . '%';
     $params[':search_note'] = $searchLike;
     $params[':search_category'] = $searchLike;
     $params[':search_from'] = $searchLike;
     $params[':search_to'] = $searchLike;
+    $params[':search_from_asset'] = $searchLike;
+    $params[':search_to_asset'] = $searchLike;
 }
 
 $whereSql = implode(' AND ', $where);
@@ -73,6 +83,8 @@ $countSql = "SELECT COUNT(*) AS total
              FROM transactions t
              LEFT JOIN accounts fa ON fa.id = t.from_account_id AND fa.user_id = t.user_id AND fa.is_deleted = 0
              LEFT JOIN accounts ta ON ta.id = t.to_account_id AND ta.user_id = t.user_id AND ta.is_deleted = 0
+             LEFT JOIN asset_types fas ON fas.id = t.from_asset_type_id AND fas.user_id = t.user_id AND fas.is_deleted = 0
+             LEFT JOIN asset_types tas ON tas.id = t.to_asset_type_id AND tas.user_id = t.user_id AND tas.is_deleted = 0
              LEFT JOIN categories c ON c.id = t.category_id AND c.user_id = t.user_id AND c.is_deleted = 0
              WHERE {$whereSql}";
 $countStmt = db()->prepare($countSql);
@@ -81,13 +93,18 @@ $total = (int) (($countStmt->fetch()['total'] ?? 0));
 
 $sql = "SELECT
             t.id, t.user_id, t.from_account_id, t.to_account_id, t.category_id,
+            t.from_asset_type_id, t.to_asset_type_id,
             t.amount, t.type, t.running_balance, t.reference_type, t.reference_id,
             t.note, t.location, t.receipt_path, t.transaction_date, t.created_at, t.updated_at,
             fa.name AS from_account_name, ta.name AS to_account_name,
+            fas.name AS from_asset_type_name, fas.icon AS from_asset_type_icon,
+            tas.name AS to_asset_type_name, tas.icon AS to_asset_type_icon,
             c.name AS category_name, c.type AS category_type, c.icon AS category_icon, c.color AS category_color
         FROM transactions t
         LEFT JOIN accounts fa ON fa.id = t.from_account_id AND fa.user_id = t.user_id AND fa.is_deleted = 0
         LEFT JOIN accounts ta ON ta.id = t.to_account_id AND ta.user_id = t.user_id AND ta.is_deleted = 0
+        LEFT JOIN asset_types fas ON fas.id = t.from_asset_type_id AND fas.user_id = t.user_id AND fas.is_deleted = 0
+        LEFT JOIN asset_types tas ON tas.id = t.to_asset_type_id AND tas.user_id = t.user_id AND tas.is_deleted = 0
         LEFT JOIN categories c ON c.id = t.category_id AND c.user_id = t.user_id AND c.is_deleted = 0
         WHERE {$whereSql}
         ORDER BY t.transaction_date DESC, t.id DESC
@@ -106,6 +123,7 @@ if ($persistFilters) {
     $filterPayload = [
         'type' => $type,
         'account_id' => $accountId,
+        'asset_type_id' => $assetTypeId,
         'category_id' => $categoryId,
         'search' => $search,
         'date_from' => $dateFrom,

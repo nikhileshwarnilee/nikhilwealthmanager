@@ -19,7 +19,7 @@ $params = [':user_id' => $userId];
 $where = ['t.user_id = :user_id', 't.is_deleted = 0'];
 
 if ($type !== '') {
-    $type = Validator::enum($type, ['income', 'expense', 'transfer', 'opening_adjustment'], 'type');
+    $type = Validator::enum($type, ['income', 'expense', 'transfer', 'opening_adjustment', 'asset'], 'type');
     $where[] = 't.type = :type';
     $params[':type'] = $type;
 }
@@ -45,12 +45,14 @@ if ($dateTo !== '') {
     $params[':date_to'] = date('Y-m-d 23:59:59', strtotime($to));
 }
 if ($search !== '') {
-    $where[] = '(t.note LIKE :search_note OR c.name LIKE :search_category OR fa.name LIKE :search_from OR ta.name LIKE :search_to)';
+    $where[] = '(t.note LIKE :search_note OR c.name LIKE :search_category OR fa.name LIKE :search_from OR ta.name LIKE :search_to OR fas.name LIKE :search_from_asset OR tas.name LIKE :search_to_asset)';
     $searchLike = '%' . $search . '%';
     $params[':search_note'] = $searchLike;
     $params[':search_category'] = $searchLike;
     $params[':search_from'] = $searchLike;
     $params[':search_to'] = $searchLike;
+    $params[':search_from_asset'] = $searchLike;
+    $params[':search_to_asset'] = $searchLike;
 }
 
 $whereSql = implode(' AND ', $where);
@@ -61,15 +63,21 @@ $sql = "SELECT
             t.type,
             t.amount,
             t.running_balance,
+            t.from_asset_type_id,
+            t.to_asset_type_id,
             t.reference_type,
             t.reference_id,
             t.note,
             fa.name AS from_account_name,
             ta.name AS to_account_name,
+            fas.name AS from_asset_type_name,
+            tas.name AS to_asset_type_name,
             c.name AS category_name
         FROM transactions t
         LEFT JOIN accounts fa ON fa.id = t.from_account_id AND fa.user_id = t.user_id AND fa.is_deleted = 0
         LEFT JOIN accounts ta ON ta.id = t.to_account_id AND ta.user_id = t.user_id AND ta.is_deleted = 0
+        LEFT JOIN asset_types fas ON fas.id = t.from_asset_type_id AND fas.user_id = t.user_id AND fas.is_deleted = 0
+        LEFT JOIN asset_types tas ON tas.id = t.to_asset_type_id AND tas.user_id = t.user_id AND tas.is_deleted = 0
         LEFT JOIN categories c ON c.id = t.category_id AND c.user_id = t.user_id AND c.is_deleted = 0
         WHERE {$whereSql}
         ORDER BY t.transaction_date DESC, t.id DESC
@@ -105,6 +113,8 @@ fputcsv($fp, [
     'Running Balance',
     'From Account',
     'To Account',
+    'From Asset',
+    'To Asset',
     'Category',
     'Reference Type',
     'Reference ID',
@@ -120,6 +130,8 @@ foreach ($rows as $row) {
         $sanitizeCell($row['running_balance']),
         $sanitizeCell($row['from_account_name']),
         $sanitizeCell($row['to_account_name']),
+        $sanitizeCell($row['from_asset_type_name']),
+        $sanitizeCell($row['to_asset_type_name']),
         $sanitizeCell($row['category_name']),
         $sanitizeCell($row['reference_type']),
         $sanitizeCell($row['reference_id']),

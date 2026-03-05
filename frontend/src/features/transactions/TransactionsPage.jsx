@@ -26,7 +26,8 @@ const typeOptions = [
   { value: '', label: 'All', icon: 'transactions' },
   { value: 'expense', label: 'Expense', icon: 'expense' },
   { value: 'income', label: 'Income', icon: 'income' },
-  { value: 'transfer', label: 'Transfer', icon: 'transfer' }
+  { value: 'transfer', label: 'Transfer', icon: 'transfer' },
+  { value: 'asset', label: 'Asset', icon: 'asset' }
 ];
 
 function accountTypeIcon(type) {
@@ -179,7 +180,7 @@ export default function TransactionsPage() {
     const query = debouncedSearch.trim().toLowerCase();
     if (!query) return transactions;
     return transactions.filter((txn) =>
-      [txn.note, txn.category_name, txn.from_account_name, txn.to_account_name, txn.type]
+      [txn.note, txn.category_name, txn.from_account_name, txn.to_account_name, txn.from_asset_type_name, txn.to_asset_type_name, txn.type]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(query))
     );

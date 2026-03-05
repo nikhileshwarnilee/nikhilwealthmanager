@@ -16,7 +16,6 @@ if (!is_numeric($input['new_initial_balance'] ?? null)) {
     Response::error('new_initial_balance must be numeric.', 422);
 }
 $newInitialBalance = round((float) $input['new_initial_balance'], 2);
-$note = Validator::string($input['note'] ?? '', 255);
 
 $pdo = db();
 $pdo->beginTransaction();
@@ -40,9 +39,6 @@ try {
         Response::error('Account not found.', 404);
     }
 
-    $oldInitial = round((float) $account['initial_balance'], 2);
-    $delta = round($newInitialBalance - $oldInitial, 2);
-
     $updateStmt = $pdo->prepare(
         'UPDATE accounts
          SET initial_balance = :initial_balance
@@ -56,24 +52,24 @@ try {
         ':user_id' => $userId,
     ]);
 
-    $adjustment = null;
-    if (abs($delta) >= 0.01) {
-        $autoNote = sprintf(
-            'Opening balance adjusted from %.2f to %.2f',
-            $oldInitial,
-            $newInitialBalance
-        );
-        $adjustment = TransactionService::createOpeningAdjustment(
-            $userId,
-            $accountId,
-            $delta,
-            $note !== '' ? $note : $autoNote,
-            $pdo,
-            false
-        );
-    }
+    // Legacy versions created system opening_adjustment transactions.
+    // Opening balance is now a direct account field edit, so remove those entries.
+    $cleanupStmt = $pdo->prepare(
+        'DELETE FROM transactions
+         WHERE user_id = :user_id
+           AND is_deleted = 0
+           AND type = :type
+           AND reference_type = :reference_type
+           AND to_account_id = :account_id'
+    );
+    $cleanupStmt->execute([
+        ':user_id' => $userId,
+        ':type' => 'opening_adjustment',
+        ':reference_type' => 'system',
+        ':account_id' => $accountId,
+    ]);
 
-    BalanceRecalculationService::recalculate($userId, $pdo);
+    BalanceRecalculationService::recalculate($userId, $pdo, false);
 
     $freshStmt = $pdo->prepare(
         'SELECT id, name, type, initial_balance, current_balance, currency, is_archived, created_at, updated_at
@@ -92,11 +88,8 @@ try {
 
     Response::success('Opening balance adjusted.', [
         'account' => $freshStmt->fetch(),
-        'adjustment_transaction' => $adjustment,
-        'delta' => $delta,
     ]);
 } catch (Throwable $exception) {
     $pdo->rollBack();
     throw $exception;
 }
-

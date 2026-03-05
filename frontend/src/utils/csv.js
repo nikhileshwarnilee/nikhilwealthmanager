@@ -14,6 +14,8 @@ export function exportTransactionsToCsv(transactions, filename = `transactions-$
     'Amount',
     'From Account',
     'To Account',
+    'From Asset',
+    'To Asset',
     'Category',
     'Note',
     'Location',
@@ -27,6 +29,8 @@ export function exportTransactionsToCsv(transactions, filename = `transactions-$
     sanitizeCell(txn.amount),
     sanitizeCell(txn.from_account_name),
     sanitizeCell(txn.to_account_name),
+    sanitizeCell(txn.from_asset_type_name),
+    sanitizeCell(txn.to_asset_type_name),
     sanitizeCell(txn.category_name),
     sanitizeCell(txn.note),
     sanitizeCell(txn.location),
@@ -47,4 +51,3 @@ export function exportTransactionsToCsv(transactions, filename = `transactions-$
   link.remove();
   URL.revokeObjectURL(url);
 }
-

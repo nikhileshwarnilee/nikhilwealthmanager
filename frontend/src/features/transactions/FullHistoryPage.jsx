@@ -28,6 +28,7 @@ const typeOptions = [
   { value: 'expense', label: 'Expense', icon: 'expense' },
   { value: 'income', label: 'Income', icon: 'income' },
   { value: 'transfer', label: 'Transfer', icon: 'transfer' },
+  { value: 'asset', label: 'Asset', icon: 'asset' },
   { value: 'opening_adjustment', label: 'Adjust', icon: 'accounts' }
 ];
 
@@ -200,7 +201,7 @@ export default function FullHistoryPage() {
     const query = debouncedSearch.trim().toLowerCase();
     if (!query) return transactions;
     return transactions.filter((txn) =>
-      [txn.note, txn.category_name, txn.from_account_name, txn.to_account_name, txn.type]
+      [txn.note, txn.category_name, txn.from_account_name, txn.to_account_name, txn.from_asset_type_name, txn.to_asset_type_name, txn.type]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(query))
     );

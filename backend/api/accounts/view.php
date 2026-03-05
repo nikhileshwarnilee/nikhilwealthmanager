@@ -62,6 +62,7 @@ $monthlySql = 'SELECT
             CASE
                 WHEN t.type = \'income\' AND t.to_account_id = :income_to_account_id THEN t.amount
                 WHEN t.type = \'transfer\' AND t.to_account_id = :transfer_to_account_id THEN t.amount
+                WHEN t.type = \'asset\' AND t.to_account_id = :asset_to_account_id THEN t.amount
                 WHEN t.type = \'opening_adjustment\' AND t.to_account_id = :adjust_to_account_id AND t.amount >= 0 THEN t.amount
                 ELSE 0
             END
@@ -70,6 +71,7 @@ $monthlySql = 'SELECT
             CASE
                 WHEN t.type = \'expense\' AND t.from_account_id = :expense_from_account_id THEN t.amount
                 WHEN t.type = \'transfer\' AND t.from_account_id = :transfer_from_account_id THEN t.amount
+                WHEN t.type = \'asset\' AND t.from_account_id = :asset_from_account_id THEN t.amount
                 WHEN t.type = \'opening_adjustment\' AND t.to_account_id = :adjust_out_account_id AND t.amount < 0 THEN ABS(t.amount)
                 ELSE 0
             END
@@ -82,9 +84,11 @@ $monthlySql = 'SELECT
 $monthlyParams = [
     ':income_to_account_id' => $id,
     ':transfer_to_account_id' => $id,
+    ':asset_to_account_id' => $id,
     ':adjust_to_account_id' => $id,
     ':expense_from_account_id' => $id,
     ':transfer_from_account_id' => $id,
+    ':asset_from_account_id' => $id,
     ':adjust_out_account_id' => $id,
     ':monthly_user_id' => $userId,
     ':scope_from_account_id' => $id,

@@ -6,13 +6,14 @@ const tabs = [
   { to: '/transactions', label: 'Transactions', icon: 'transactions' },
   { to: '/transactions/new', label: 'Add', icon: 'plus' },
   { to: '/accounts', label: 'Accounts', icon: 'accounts' },
+  { to: '/assets', label: 'Wealth', icon: 'asset' },
   { to: '/charts', label: 'Charts', icon: 'chart' }
 ];
 
 export default function BottomTabs() {
   return (
     <nav className="safe-bottom z-40 w-full border-t border-slate-200/80 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
-      <div className="grid grid-cols-5">
+      <div className="grid grid-cols-6">
         {tabs.map((tab) => (
           <NavLink
             key={tab.to}

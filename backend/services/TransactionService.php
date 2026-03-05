@@ -13,6 +13,7 @@ final class TransactionService
         try {
             $balanceSnapshot = self::snapshotAccountBalances($pdo, $userId);
             $id = self::insertTransaction($pdo, $userId, $data);
+            AssetService::applyTransactionDelta($pdo, $userId, null, $data);
             $recalculated = BalanceRecalculationService::recalculate($userId, $pdo, false);
             self::assertNonCreditFinalBalances(
                 $balanceSnapshot,
@@ -49,6 +50,8 @@ final class TransactionService
                 'UPDATE transactions
                  SET from_account_id = :from_account_id,
                      to_account_id = :to_account_id,
+                     from_asset_type_id = :from_asset_type_id,
+                     to_asset_type_id = :to_asset_type_id,
                      category_id = :category_id,
                      amount = :amount,
                      type = :type,
@@ -65,6 +68,8 @@ final class TransactionService
             $stmt->execute([
                 ':from_account_id' => $next['from_account_id'],
                 ':to_account_id' => $next['to_account_id'],
+                ':from_asset_type_id' => $next['from_asset_type_id'],
+                ':to_asset_type_id' => $next['to_asset_type_id'],
                 ':category_id' => $next['category_id'],
                 ':amount' => $next['amount'],
                 ':type' => $next['type'],
@@ -78,6 +83,7 @@ final class TransactionService
                 ':user_id' => $userId,
             ]);
 
+            AssetService::applyTransactionDelta($pdo, $userId, $existing, $next);
             $recalculated = BalanceRecalculationService::recalculate($userId, $pdo, false);
             self::assertNonCreditFinalBalances(
                 $balanceSnapshot,
@@ -117,6 +123,7 @@ final class TransactionService
             );
             $stmt->execute([':id' => $transactionId, ':user_id' => $userId]);
 
+            AssetService::applyTransactionDelta($pdo, $userId, $existing, null);
             $recalculated = BalanceRecalculationService::recalculate($userId, $pdo, false);
             self::assertNonCreditFinalBalances(
                 $balanceSnapshot,
@@ -189,6 +196,8 @@ final class TransactionService
                 t.user_id,
                 t.from_account_id,
                 t.to_account_id,
+                t.from_asset_type_id,
+                t.to_asset_type_id,
                 t.category_id,
                 t.amount,
                 t.type,
@@ -203,6 +212,10 @@ final class TransactionService
                 t.updated_at,
                 fa.name AS from_account_name,
                 ta.name AS to_account_name,
+                fasset.name AS from_asset_type_name,
+                fasset.icon AS from_asset_type_icon,
+                tasset.name AS to_asset_type_name,
+                tasset.icon AS to_asset_type_icon,
                 c.name AS category_name,
                 c.type AS category_type
              FROM transactions t
@@ -214,6 +227,14 @@ final class TransactionService
                ON ta.id = t.to_account_id
               AND ta.user_id = t.user_id
               AND ta.is_deleted = 0
+             LEFT JOIN asset_types fasset
+               ON fasset.id = t.from_asset_type_id
+              AND fasset.user_id = t.user_id
+              AND fasset.is_deleted = 0
+             LEFT JOIN asset_types tasset
+               ON tasset.id = t.to_asset_type_id
+              AND tasset.user_id = t.user_id
+              AND tasset.is_deleted = 0
              LEFT JOIN categories c
                ON c.id = t.category_id
               AND c.user_id = t.user_id
@@ -235,13 +256,15 @@ final class TransactionService
     {
         $type = Validator::enum(
             $input['type'] ?? $fallback['type'] ?? '',
-            ['income', 'expense', 'transfer'],
+            ['income', 'expense', 'transfer', 'asset'],
             'transaction type'
         );
 
         $amount = Validator::amount($input['amount'] ?? $fallback['amount'] ?? null);
         $fromAccountId = Validator::nullablePositiveInt($input['from_account_id'] ?? $fallback['from_account_id'] ?? null);
         $toAccountId = Validator::nullablePositiveInt($input['to_account_id'] ?? $fallback['to_account_id'] ?? null);
+        $fromAssetTypeId = Validator::nullablePositiveInt($input['from_asset_type_id'] ?? $fallback['from_asset_type_id'] ?? null);
+        $toAssetTypeId = Validator::nullablePositiveInt($input['to_asset_type_id'] ?? $fallback['to_asset_type_id'] ?? null);
         $categoryId = Validator::nullablePositiveInt($input['category_id'] ?? $fallback['category_id'] ?? null);
         $referenceType = Validator::string($input['reference_type'] ?? $fallback['reference_type'] ?? 'manual', 60);
         $referenceId = Validator::nullablePositiveInt($input['reference_id'] ?? $fallback['reference_id'] ?? null);
@@ -258,6 +281,8 @@ final class TransactionService
                 Response::error('category_id is required for income.', 422);
             }
             $fromAccountId = null;
+            $fromAssetTypeId = null;
+            $toAssetTypeId = null;
             self::assertCategory($categoryId, $userId, 'income');
             self::assertAccount($toAccountId, $userId);
         } elseif ($type === 'expense') {
@@ -268,9 +293,11 @@ final class TransactionService
                 Response::error('category_id is required for expense.', 422);
             }
             $toAccountId = null;
+            $fromAssetTypeId = null;
+            $toAssetTypeId = null;
             self::assertCategory($categoryId, $userId, 'expense');
             self::assertAccount($fromAccountId, $userId);
-        } else {
+        } elseif ($type === 'transfer') {
             if ($fromAccountId === null || $toAccountId === null) {
                 Response::error('from_account_id and to_account_id are required for transfer.', 422);
             }
@@ -290,6 +317,52 @@ final class TransactionService
                 $referenceType = 'people_' . $peopleAction;
             }
             $categoryId = null;
+            $fromAssetTypeId = null;
+            $toAssetTypeId = null;
+        } else {
+            $isAccountToAsset = $fromAccountId !== null
+                && $toAssetTypeId !== null
+                && $toAccountId === null
+                && $fromAssetTypeId === null;
+            $isAssetToAccount = $fromAssetTypeId !== null
+                && $toAccountId !== null
+                && $fromAccountId === null
+                && $toAssetTypeId === null;
+            $isDirectAssetCredit = $fromAccountId === null
+                && $toAccountId === null
+                && $fromAssetTypeId === null
+                && $toAssetTypeId !== null;
+
+            if (!$isAccountToAsset && !$isAssetToAccount && !$isDirectAssetCredit) {
+                Response::error(
+                    'Asset transaction must be Account -> Asset Type, Asset Type -> Account, or Direct Asset Entry.',
+                    422
+                );
+            }
+
+            if ($isAccountToAsset) {
+                $fromAccount = self::assertAccount($fromAccountId, $userId);
+                if ((string) ($fromAccount['type'] ?? '') === 'people') {
+                    Response::error('People accounts cannot be used for asset investments.', 422);
+                }
+                self::assertAssetType($toAssetTypeId, $userId);
+                $referenceType = $referenceType !== '' ? $referenceType : 'asset_investment';
+                $referenceId = $referenceId ?? $toAssetTypeId;
+            } elseif ($isAssetToAccount) {
+                $toAccount = self::assertAccount($toAccountId, $userId);
+                if ((string) ($toAccount['type'] ?? '') === 'people') {
+                    Response::error('People accounts cannot be used for asset liquidation.', 422);
+                }
+                self::assertAssetType($fromAssetTypeId, $userId);
+                $referenceType = $referenceType !== '' ? $referenceType : 'asset_liquidation';
+                $referenceId = $referenceId ?? $fromAssetTypeId;
+            } else {
+                self::assertAssetType($toAssetTypeId, $userId);
+                $referenceType = $referenceType !== '' ? $referenceType : 'asset_opening';
+                $referenceId = $referenceId ?? $toAssetTypeId;
+            }
+
+            $categoryId = null;
         }
 
         return [
@@ -297,6 +370,8 @@ final class TransactionService
             'amount' => $amount,
             'from_account_id' => $fromAccountId,
             'to_account_id' => $toAccountId,
+            'from_asset_type_id' => $fromAssetTypeId,
+            'to_asset_type_id' => $toAssetTypeId,
             'category_id' => $categoryId,
             'reference_type' => $referenceType !== '' ? $referenceType : 'manual',
             'reference_id' => $referenceId,
@@ -311,10 +386,12 @@ final class TransactionService
     {
         $insert = $pdo->prepare(
             'INSERT INTO transactions (
-                user_id, from_account_id, to_account_id, category_id, amount, type, running_balance,
+                user_id, from_account_id, to_account_id, from_asset_type_id, to_asset_type_id,
+                category_id, amount, type, running_balance,
                 reference_type, reference_id, note, location, receipt_path, transaction_date
             ) VALUES (
-                :user_id, :from_account_id, :to_account_id, :category_id, :amount, :type, :running_balance,
+                :user_id, :from_account_id, :to_account_id, :from_asset_type_id, :to_asset_type_id,
+                :category_id, :amount, :type, :running_balance,
                 :reference_type, :reference_id, :note, :location, :receipt_path, :transaction_date
             )'
         );
@@ -323,6 +400,8 @@ final class TransactionService
             ':user_id' => $userId,
             ':from_account_id' => $data['from_account_id'] ?? null,
             ':to_account_id' => $data['to_account_id'] ?? null,
+            ':from_asset_type_id' => $data['from_asset_type_id'] ?? null,
+            ':to_asset_type_id' => $data['to_asset_type_id'] ?? null,
             ':category_id' => $data['category_id'] ?? null,
             ':amount' => $data['amount'],
             ':type' => $data['type'],
@@ -340,7 +419,8 @@ final class TransactionService
 
     private static function findRawById(int $id, int $userId, bool $forUpdate, PDO $pdo): ?array
     {
-        $sql = 'SELECT id, user_id, from_account_id, to_account_id, category_id, amount, type, running_balance,
+        $sql = 'SELECT id, user_id, from_account_id, to_account_id, from_asset_type_id, to_asset_type_id,
+                       category_id, amount, type, running_balance,
                        reference_type, reference_id, note, location, receipt_path, transaction_date, is_deleted
                 FROM transactions
                 WHERE id = :id
@@ -419,6 +499,11 @@ final class TransactionService
         }
 
         return $account;
+    }
+
+    private static function assertAssetType(int $assetTypeId, int $userId): array
+    {
+        return AssetService::assertAssetType($assetTypeId, $userId);
     }
 
     private static function isPeopleReferenceType(string $referenceType): bool

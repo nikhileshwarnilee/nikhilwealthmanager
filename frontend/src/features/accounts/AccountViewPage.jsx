@@ -96,7 +96,7 @@ export default function AccountViewPage() {
     const query = debouncedSearch.trim().toLowerCase();
     if (!query) return transactions;
     return transactions.filter((txn) =>
-      [txn.note, txn.category_name, txn.from_account_name, txn.to_account_name, txn.type]
+      [txn.note, txn.category_name, txn.from_account_name, txn.to_account_name, txn.from_asset_type_name, txn.to_asset_type_name, txn.type]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(query))
     );

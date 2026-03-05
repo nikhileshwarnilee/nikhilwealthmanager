@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import AppShell from '../../components/AppShell';
 import BottomSheet from '../../components/BottomSheet';
-import Icon, { categoryIconKey } from '../../components/Icon';
+import Icon, { assetIconKey, categoryIconKey } from '../../components/Icon';
 import { useToast } from '../../app/ToastContext';
 import { normalizeApiError } from '../../services/http';
 import { deleteTransaction, fetchTransactionView } from '../../services/transactionService';
@@ -37,8 +37,22 @@ export default function TransactionViewPage() {
   }, [load]);
 
   const categoryIcon = useMemo(() => {
+    if (transaction?.type === 'asset') {
+      return assetIconKey({
+        icon: transaction?.account?.to_asset?.icon || transaction?.account?.from_asset?.icon,
+        name: transaction?.account?.to_asset?.name || transaction?.account?.from_asset?.name
+      });
+    }
     if (!transaction?.category) return 'transactions';
     return categoryIconKey(transaction.category);
+  }, [transaction]);
+  const assetLabel = useMemo(() => {
+    if (transaction?.type !== 'asset') return '';
+    const toAsset = transaction?.account?.to_asset?.name;
+    const fromAsset = transaction?.account?.from_asset?.name;
+    if (toAsset) return toAsset;
+    if (fromAsset) return fromAsset;
+    return 'Asset';
   }, [transaction]);
   const categoryColor = String(transaction?.category?.color || '').trim();
   const receiptExt = String(transaction?.receipt || '').split('.').pop()?.toLowerCase() || '';
@@ -95,7 +109,7 @@ export default function TransactionViewPage() {
                     {transaction.type}
                   </p>
                   <h2 className="truncate text-sm font-extrabold text-slate-900 dark:text-slate-100">
-                    {transaction.category?.name || 'Uncategorized'}
+                    {transaction.type === 'asset' ? assetLabel : transaction.category?.name || 'Uncategorized'}
                   </h2>
                 </div>
               </div>
@@ -111,6 +125,14 @@ export default function TransactionViewPage() {
                 <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">Account</p>
                 <p className="mt-1 font-semibold text-slate-900 dark:text-slate-100">{transaction.account?.name || '-'}</p>
               </div>
+              {transaction.type === 'asset' ? (
+                <div className="rounded-lg bg-slate-100 p-2 dark:bg-slate-800">
+                  <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">Asset</p>
+                  <p className="mt-1 font-semibold text-slate-900 dark:text-slate-100">
+                    {transaction.account?.to_asset?.name || transaction.account?.from_asset?.name || '-'}
+                  </p>
+                </div>
+              ) : null}
               <div className="rounded-lg bg-slate-100 p-2 dark:bg-slate-800">
                 <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">Date</p>
                 <p className="mt-1 font-semibold text-slate-900 dark:text-slate-100">{formatDateTime(transaction.date)}</p>

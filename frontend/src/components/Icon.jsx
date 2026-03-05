@@ -159,6 +159,66 @@ const iconMap = {
       <path d="m7 15 4-4 3 2 5-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </>
   ),
+  asset: (
+    <>
+      <path d="M4 19h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M6 19v-6l4-3 3 2 5-5v12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </>
+  ),
+  gold: (
+    <>
+      <path d="M5 16h8l3 3H8z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M9 10h8l2.5 2.5H11.5z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M5 8h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </>
+  ),
+  silver: (
+    <>
+      <ellipse cx="12" cy="12" rx="7.5" ry="7.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8.2 12.2c0 1.7 1.5 3 3.8 3s3.8-1.2 3.8-2.8c0-1.5-1.2-2.2-3.4-2.7-2-.5-2.8-.9-2.8-2.1 0-1.1 1.1-2 2.7-2 1.5 0 2.7.6 3.2 1.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </>
+  ),
+  stocks: (
+    <>
+      <path d="M4 20V4M4 20h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="m7 15 3-4 3 2 4-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M14 7h3v3" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </>
+  ),
+  mutual: (
+    <>
+      <circle cx="8" cy="10" r="2.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="16" cy="10" r="2.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M5.5 18a4 4 0 0 1 5 0M13.5 18a4 4 0 0 1 5 0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M10.5 12h3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </>
+  ),
+  realestate: (
+    <>
+      <path d="M3.5 10 12 4l8.5 6v10h-17z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M9 20v-6h6v6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+    </>
+  ),
+  deposit: (
+    <>
+      <rect x="4" y="5" width="16" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8 9h8M8 12h8M8 15h5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </>
+  ),
+  crypto: (
+    <>
+      <circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M12 7v10M9.5 9.5H13a2 2 0 1 1 0 4h-3M9.5 13.5H13.5a2 2 0 1 1 0 4H9.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </>
+  ),
+  vehicle: (
+    <>
+      <path d="M4 14h16l-1.2-4.2A2 2 0 0 0 16.9 8H7.1a2 2 0 0 0-1.9 1.8Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M6.5 14v3M17.5 14v3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="7.5" cy="17" r="1.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="16.5" cy="17" r="1.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+    </>
+  ),
   search: (
     <>
       <circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
@@ -265,7 +325,17 @@ const ICON_ALIASES = {
   utensils: 'food',
   car: 'transport',
   bolt: 'utilities',
-  bag: 'shopping'
+  bag: 'shopping',
+  investment: 'asset',
+  investments: 'asset',
+  assets: 'asset',
+  mutualfund: 'mutual',
+  mutual_funds: 'mutual',
+  'mutual-funds': 'mutual',
+  fixeddeposit: 'deposit',
+  fixed_deposit: 'deposit',
+  real_estate: 'realestate',
+  'real-estate': 'realestate'
 };
 
 export const ICON_NAMES = Object.freeze(Object.keys(iconMap));
@@ -291,6 +361,27 @@ export function categoryIconKey(category) {
   if (raw.includes('health') || raw.includes('heart')) return 'heart';
   const type = String(category?.type || category?.category_type || '').toLowerCase();
   return type === 'income' ? 'income' : 'expense';
+}
+
+export function assetIconKey(asset) {
+  const directRaw = String(asset?.icon || asset?.asset_icon || '').trim();
+  const direct = directRaw.toLowerCase();
+  if (directRaw) {
+    if (iconMap[direct]) return direct;
+    if (ICON_ALIASES[direct]) return ICON_ALIASES[direct];
+    if (looksLikeCustomIcon(directRaw)) return directRaw;
+  }
+
+  const raw = String(`${asset?.name || ''} ${asset?.asset_name || ''}`).toLowerCase();
+  if (raw.includes('gold')) return 'gold';
+  if (raw.includes('silver')) return 'silver';
+  if (raw.includes('stock') || raw.includes('equity') || raw.includes('share')) return 'stocks';
+  if (raw.includes('mutual')) return 'mutual';
+  if (raw.includes('real estate') || raw.includes('property')) return 'realestate';
+  if (raw.includes('deposit') || raw.includes('fd')) return 'deposit';
+  if (raw.includes('crypto') || raw.includes('bitcoin')) return 'crypto';
+  if (raw.includes('vehicle') || raw.includes('car')) return 'vehicle';
+  return 'asset';
 }
 
 export default function Icon({ name, size = 20, className = '' }) {

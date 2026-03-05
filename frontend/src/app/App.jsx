@@ -19,6 +19,9 @@ const TransactionViewPage = lazy(() => import('../features/transactions/Transact
 const AccountsPage = lazy(() => import('../features/accounts/AccountsPage'));
 const AccountViewPage = lazy(() => import('../features/accounts/AccountViewPage'));
 const AccountEditPage = lazy(() => import('../features/accounts/AccountEditPage'));
+const AssetsWealthPage = lazy(() => import('../features/assets/AssetsWealthPage'));
+const AssetTypesPage = lazy(() => import('../features/assets/AssetTypesPage'));
+const AssetViewPage = lazy(() => import('../features/assets/AssetViewPage'));
 const CategoriesPage = lazy(() => import('../pages/CategoriesPage'));
 const CategoryFormPage = lazy(() => import('../pages/CategoryFormPage'));
 const BudgetsPage = lazy(() => import('../pages/BudgetsPage'));
@@ -173,6 +176,30 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <AccountEditPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/assets"
+            element={
+              <ProtectedRoute>
+                <AssetsWealthPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/assets/types"
+            element={
+              <ProtectedRoute>
+                <AssetTypesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/assets/:id"
+            element={
+              <ProtectedRoute>
+                <AssetViewPage />
               </ProtectedRoute>
             }
           />

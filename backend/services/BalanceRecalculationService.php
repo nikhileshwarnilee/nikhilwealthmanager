@@ -121,6 +121,13 @@ final class BalanceRecalculationService
             if ($toId !== null) {
                 $changes[$toId] = ($changes[$toId] ?? 0) + $amount;
             }
+        } elseif ($type === 'asset') {
+            if ($fromId !== null) {
+                $changes[$fromId] = ($changes[$fromId] ?? 0) - $amount;
+            }
+            if ($toId !== null) {
+                $changes[$toId] = ($changes[$toId] ?? 0) + $amount;
+            }
         } elseif ($type === 'opening_adjustment') {
             if ($toId !== null) {
                 $changes[$toId] = ($changes[$toId] ?? 0) + $amount;
@@ -138,7 +145,7 @@ final class BalanceRecalculationService
                 ? (int) $txn['to_account_id']
                 : null;
         }
-        if ($type === 'expense' || $type === 'transfer') {
+        if ($type === 'expense' || $type === 'transfer' || $type === 'asset') {
             return isset($txn['from_account_id']) && $txn['from_account_id'] !== null
                 ? (int) $txn['from_account_id']
                 : null;
