@@ -5,7 +5,7 @@ tasks:
 
 ```
 # Define deployment path
-- export DEPLOYPATH=/home/fkwxcbmy/public_html/contysi.com/website/expenses-manager
+- export DEPLOYPATH=/home3/fkwxcbmy/public_html/contysi.com/website/expenses-manager
 
 # Ensure deployment directory exists
 - /bin/mkdir -p $DEPLOYPATH
