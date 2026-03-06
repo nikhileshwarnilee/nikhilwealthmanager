@@ -1,0 +1,1 @@
+import{h as e,i as a}from"./index-ZXZJ7liJ.js";async function s(r={}){const t=await e.get("/reports/category-summary.php",{params:r});return a(t)}async function n(r={}){const t=await e.get("/reports/category-breakdown.php",{params:r});return a(t)}export{s as a,n as f};
