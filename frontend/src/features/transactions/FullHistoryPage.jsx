@@ -95,6 +95,7 @@ export default function FullHistoryPage() {
   }, [accountId, accounts, accountsLoaded]);
 
   const debouncedSearch = useDebounce(search, 350);
+  const normalizedSearch = debouncedSearch.trim();
   const intervalLabel = useMemo(() => intervalDisplayLabel(interval), [interval]);
 
   const accountOptions = useMemo(
@@ -149,11 +150,12 @@ export default function FullHistoryPage() {
 
   const transactionQuery = useMemo(
     () => ({
-      ...(intervalDateRange(interval) || {}),
+      ...(normalizedSearch ? {} : (intervalDateRange(interval) || {})),
       type: normalizedType,
-      account_id: normalizedAccountId
+      account_id: normalizedAccountId,
+      search: normalizedSearch
     }),
-    [interval, normalizedAccountId, normalizedType]
+    [interval, normalizedAccountId, normalizedSearch, normalizedType]
   );
 
   const onTransactionError = useCallback(
@@ -197,15 +199,7 @@ export default function FullHistoryPage() {
   }, [interval, normalizedAccountId, normalizedType, paramsString, setParams]);
   useInfiniteScroll(loadMoreRef, loadMore, hasMore && !loading && !loadingMore);
 
-  const filteredTransactions = useMemo(() => {
-    const query = debouncedSearch.trim().toLowerCase();
-    if (!query) return transactions;
-    return transactions.filter((txn) =>
-      [txn.note, txn.category_name, txn.from_account_name, txn.to_account_name, txn.from_asset_type_name, txn.to_asset_type_name, txn.type]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(query))
-    );
-  }, [debouncedSearch, transactions]);
+  const filteredTransactions = transactions;
 
   const onExport = () => {
     exportTransactionsToCsv(filteredTransactions);
@@ -229,7 +223,7 @@ export default function FullHistoryPage() {
       searchValue={search}
       onToggleSearch={() => setSearchOpen((prev) => !prev)}
       onSearchChange={setSearch}
-      searchPlaceholder="Search loaded history"
+      searchPlaceholder="Search all transactions"
       onExport={onExport}
       intervalSwipeEnabled={interval.mode !== 'all_time'}
       onIntervalSwipePrev={onSwipePrevInterval}

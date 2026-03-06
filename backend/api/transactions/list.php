@@ -54,20 +54,34 @@ if ($categoryId !== '') {
     $params[':category_id'] = $categoryIdInt;
 }
 
-if ($dateFrom !== '') {
+if ($search === '' && $dateFrom !== '') {
     $from = Validator::dateTime($dateFrom, false);
     $where[] = 't.transaction_date >= :date_from';
     $params[':date_from'] = date('Y-m-d 00:00:00', strtotime($from));
 }
 
-if ($dateTo !== '') {
+if ($search === '' && $dateTo !== '') {
     $to = Validator::dateTime($dateTo, false);
     $where[] = 't.transaction_date <= :date_to';
     $params[':date_to'] = date('Y-m-d 23:59:59', strtotime($to));
 }
 
 if ($search !== '') {
-    $where[] = '(t.note LIKE :search_note OR c.name LIKE :search_category OR fa.name LIKE :search_from OR ta.name LIKE :search_to OR fas.name LIKE :search_from_asset OR tas.name LIKE :search_to_asset)';
+    $where[] = '(t.note LIKE :search_note
+        OR c.name LIKE :search_category
+        OR fa.name LIKE :search_from
+        OR ta.name LIKE :search_to
+        OR fas.name LIKE :search_from_asset
+        OR tas.name LIKE :search_to_asset
+        OR t.type LIKE :search_type
+        OR t.location LIKE :search_location
+        OR CAST(t.amount AS CHAR) LIKE :search_amount
+        OR CAST(t.id AS CHAR) LIKE :search_id
+        OR DATE_FORMAT(t.transaction_date, \'%Y-%m-%d\') LIKE :search_date_iso
+        OR DATE_FORMAT(t.transaction_date, \'%d-%m-%Y\') LIKE :search_date_dmy_dash
+        OR DATE_FORMAT(t.transaction_date, \'%d/%m/%Y\') LIKE :search_date_dmy_slash
+        OR DATE_FORMAT(t.transaction_date, \'%H:%i\') LIKE :search_time_24
+        OR DATE_FORMAT(t.transaction_date, \'%h:%i %p\') LIKE :search_time_12)';
     $searchLike = '%' . $search . '%';
     $params[':search_note'] = $searchLike;
     $params[':search_category'] = $searchLike;
@@ -75,6 +89,15 @@ if ($search !== '') {
     $params[':search_to'] = $searchLike;
     $params[':search_from_asset'] = $searchLike;
     $params[':search_to_asset'] = $searchLike;
+    $params[':search_type'] = $searchLike;
+    $params[':search_location'] = $searchLike;
+    $params[':search_amount'] = $searchLike;
+    $params[':search_id'] = $searchLike;
+    $params[':search_date_iso'] = $searchLike;
+    $params[':search_date_dmy_dash'] = $searchLike;
+    $params[':search_date_dmy_slash'] = $searchLike;
+    $params[':search_time_24'] = $searchLike;
+    $params[':search_time_12'] = $searchLike;
 }
 
 $whereSql = implode(' AND ', $where);

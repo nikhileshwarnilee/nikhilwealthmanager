@@ -54,6 +54,7 @@ export default function CategoryBreakdownPage() {
   const initializedRef = useRef(false);
 
   const debouncedSearch = useDebounce(searchTerm, 300);
+  const normalizedSearch = debouncedSearch.trim();
   const intervalLabel = useMemo(() => intervalDisplayLabel(interval), [interval]);
 
   useEffect(() => {
@@ -118,11 +119,12 @@ export default function CategoryBreakdownPage() {
 
   const transactionQuery = useMemo(
     () => ({
-      ...(intervalDateRange(interval) || {}),
+      ...(normalizedSearch ? {} : (intervalDateRange(interval) || {})),
       category_id: categoryId,
-      type
+      type,
+      search: normalizedSearch
     }),
-    [categoryId, interval, type]
+    [categoryId, interval, normalizedSearch, type]
   );
 
   const onTransactionError = useCallback(
@@ -148,15 +150,7 @@ export default function CategoryBreakdownPage() {
 
   useInfiniteScroll(loadMoreRef, loadMore, hasMore && !listLoading && !loadingMore);
 
-  const filteredTransactions = useMemo(() => {
-    const query = debouncedSearch.trim().toLowerCase();
-    if (!query) return transactions;
-    return transactions.filter((txn) =>
-      [txn.note, txn.category_name, txn.from_account_name, txn.to_account_name, txn.from_asset_type_name, txn.to_asset_type_name, txn.type, txn.location]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(query))
-    );
-  }, [debouncedSearch, transactions]);
+  const filteredTransactions = transactions;
 
   const category = report?.category || null;
   const stats = report?.stats || {};

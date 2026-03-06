@@ -88,6 +88,7 @@ export default function TransactionsPage() {
   }, [accountId, accounts, accountsLoaded]);
 
   const debouncedSearch = useDebounce(searchTerm, 300);
+  const normalizedSearch = debouncedSearch.trim();
   const intervalLabel = useMemo(() => intervalDisplayLabel(interval), [interval]);
   const periodLabel = intervalLabel.toLowerCase();
   const accountOptions = useMemo(
@@ -143,11 +144,12 @@ export default function TransactionsPage() {
 
   const transactionQuery = useMemo(
     () => ({
-      ...(intervalDateRange(interval) || {}),
+      ...(normalizedSearch ? {} : (intervalDateRange(interval) || {})),
       type: normalizedType,
-      account_id: normalizedAccountId
+      account_id: normalizedAccountId,
+      search: normalizedSearch
     }),
-    [interval, normalizedAccountId, normalizedType]
+    [interval, normalizedAccountId, normalizedSearch, normalizedType]
   );
 
   const onTransactionError = useCallback(
@@ -176,15 +178,7 @@ export default function TransactionsPage() {
 
   useInfiniteScroll(loadMoreRef, loadMore, hasMore && !loading && !loadingMore);
 
-  const filteredTransactions = useMemo(() => {
-    const query = debouncedSearch.trim().toLowerCase();
-    if (!query) return transactions;
-    return transactions.filter((txn) =>
-      [txn.note, txn.category_name, txn.from_account_name, txn.to_account_name, txn.from_asset_type_name, txn.to_asset_type_name, txn.type]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(query))
-    );
-  }, [debouncedSearch, transactions]);
+  const filteredTransactions = transactions;
 
   const historyHref = useMemo(() => {
     const query = new URLSearchParams(intervalToQueryParams(interval));
@@ -207,7 +201,7 @@ export default function TransactionsPage() {
       searchValue={searchTerm}
       onToggleSearch={() => setSearchOpen((prev) => !prev)}
       onSearchChange={setSearchTerm}
-      searchPlaceholder="Search in loaded list"
+      searchPlaceholder="Search all transactions"
       onExport={() => exportTransactionsToCsv(filteredTransactions)}
       intervalSwipeEnabled={interval.mode !== 'all_time'}
       onIntervalSwipePrev={onSwipePrevInterval}

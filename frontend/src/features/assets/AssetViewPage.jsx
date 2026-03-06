@@ -77,6 +77,7 @@ export default function AssetViewPage() {
 
   const loadMoreRef = useRef(null);
   const debouncedSearch = useDebounce(searchTerm, 300);
+  const normalizedSearch = debouncedSearch.trim();
   const intervalLabel = useMemo(() => intervalDisplayLabel(interval), [interval]);
   const iconOptions = useMemo(
     () =>
@@ -125,11 +126,12 @@ export default function AssetViewPage() {
 
   const transactionQuery = useMemo(
     () => ({
-      ...(intervalDateRange(interval) || {}),
+      ...(normalizedSearch ? {} : (intervalDateRange(interval) || {})),
       type: 'asset',
-      asset_type_id: assetId
+      asset_type_id: assetId,
+      search: normalizedSearch
     }),
-    [assetId, interval]
+    [assetId, interval, normalizedSearch]
   );
 
   const onTransactionError = useCallback(
@@ -154,22 +156,7 @@ export default function AssetViewPage() {
   });
   useInfiniteScroll(loadMoreRef, loadMore, hasMore && !loading && !loadingMore);
 
-  const filteredTransactions = useMemo(() => {
-    const query = debouncedSearch.trim().toLowerCase();
-    if (!query) return transactions;
-    return transactions.filter((txn) =>
-      [
-        txn.note,
-        txn.from_account_name,
-        txn.to_account_name,
-        txn.from_asset_type_name,
-        txn.to_asset_type_name,
-        txn.type
-      ]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(query))
-    );
-  }, [debouncedSearch, transactions]);
+  const filteredTransactions = transactions;
 
   const asset = assetData?.asset || null;
   const investmentHistory = assetData?.investment_history || [];

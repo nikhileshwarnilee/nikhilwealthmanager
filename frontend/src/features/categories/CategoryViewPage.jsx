@@ -50,6 +50,7 @@ export default function CategoryViewPage() {
   const [replacementCategoryId, setReplacementCategoryId] = useState('');
 
   const debouncedSearch = useDebounce(searchTerm, 300);
+  const normalizedSearch = debouncedSearch.trim();
   const intervalLabel = useMemo(() => intervalDisplayLabel(interval), [interval]);
   const iconName = useMemo(() => (category ? categoryIconKey(category) : 'categories'), [category]);
 
@@ -68,10 +69,11 @@ export default function CategoryViewPage() {
 
   const transactionQuery = useMemo(
     () => ({
-      ...(intervalDateRange(interval) || {}),
-      category_id: categoryId
+      ...(normalizedSearch ? {} : (intervalDateRange(interval) || {})),
+      category_id: categoryId,
+      search: normalizedSearch
     }),
-    [categoryId, interval]
+    [categoryId, interval, normalizedSearch]
   );
 
   const onTransactionError = useCallback(
@@ -100,15 +102,7 @@ export default function CategoryViewPage() {
   }, [loadCategory]);
   useInfiniteScroll(loadMoreRef, loadMore, hasMore && !loading && !loadingMore);
 
-  const filteredTransactions = useMemo(() => {
-    const query = debouncedSearch.trim().toLowerCase();
-    if (!query) return transactions;
-    return transactions.filter((txn) =>
-      [txn.note, txn.category_name, txn.from_account_name, txn.to_account_name, txn.from_asset_type_name, txn.to_asset_type_name, txn.type]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(query))
-    );
-  }, [debouncedSearch, transactions]);
+  const filteredTransactions = transactions;
 
   const closeDelete = () => {
     setConfirmDelete(false);
@@ -241,7 +235,9 @@ export default function CategoryViewPage() {
                 Linked Transactions
               </h3>
               <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                {filteredTransactions.length}/{monthlyCount} in {intervalLabel}
+                {debouncedSearch
+                  ? `${filteredTransactions.length}/${monthlyCount} matching`
+                  : `${filteredTransactions.length}/${monthlyCount} in ${intervalLabel}`}
               </span>
             </div>
             {loading ? (

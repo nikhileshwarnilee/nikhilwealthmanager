@@ -43,6 +43,7 @@ export default function AccountViewPage() {
   const [deleting, setDeleting] = useState(false);
 
   const debouncedSearch = useDebounce(searchTerm, 300);
+  const normalizedSearch = debouncedSearch.trim();
   const intervalLabel = useMemo(() => intervalDisplayLabel(interval), [interval]);
 
   const loadAccount = useCallback(async () => {
@@ -60,10 +61,11 @@ export default function AccountViewPage() {
 
   const transactionQuery = useMemo(
     () => ({
-      ...(intervalDateRange(interval) || {}),
-      account_id: accountId
+      ...(normalizedSearch ? {} : (intervalDateRange(interval) || {})),
+      account_id: accountId,
+      search: normalizedSearch
     }),
-    [accountId, interval]
+    [accountId, interval, normalizedSearch]
   );
 
   const onTransactionError = useCallback(
@@ -92,15 +94,7 @@ export default function AccountViewPage() {
   }, [loadAccount]);
   useInfiniteScroll(loadMoreRef, loadMore, hasMore && !loading && !loadingMore);
 
-  const filteredTransactions = useMemo(() => {
-    const query = debouncedSearch.trim().toLowerCase();
-    if (!query) return transactions;
-    return transactions.filter((txn) =>
-      [txn.note, txn.category_name, txn.from_account_name, txn.to_account_name, txn.from_asset_type_name, txn.to_asset_type_name, txn.type]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(query))
-    );
-  }, [debouncedSearch, transactions]);
+  const filteredTransactions = transactions;
 
   const historyHref = useMemo(() => {
     const query = new URLSearchParams(intervalToQueryParams(interval));
@@ -236,7 +230,9 @@ export default function AccountViewPage() {
                 Transactions
               </h3>
               <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                {filteredTransactions.length}/{monthlyCount} in {intervalLabel}
+                {debouncedSearch
+                  ? `${filteredTransactions.length}/${monthlyCount} matching`
+                  : `${filteredTransactions.length}/${monthlyCount} in ${intervalLabel}`}
               </span>
             </div>
             {loading ? (
