@@ -1,0 +1,37 @@
+---
+
+deployment:
+tasks:
+
+```
+# Define deployment path
+- export DEPLOYPATH=/home/fkwxcbmy/public_html/contysi.com/website/expenses-manager
+
+# Ensure deployment directory exists
+- /bin/mkdir -p $DEPLOYPATH
+
+# ---------------------------
+# Copy React production build
+# ---------------------------
+- /bin/cp -R frontend/dist/* $DEPLOYPATH
+
+# ---------------------------
+# Copy backend application
+# ---------------------------
+- /bin/cp -R backend $DEPLOYPATH
+
+# ---------------------------
+# Copy API layer
+# ---------------------------
+- /bin/cp -R api $DEPLOYPATH
+
+# ---------------------------
+# Copy PHP vendor dependencies
+# ---------------------------
+- /bin/cp -R vendor $DEPLOYPATH
+
+# ---------------------------
+# Ensure uploads directory exists
+# ---------------------------
+- /bin/mkdir -p $DEPLOYPATH/backend/uploads
+```
