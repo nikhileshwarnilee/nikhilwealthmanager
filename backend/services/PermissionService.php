@@ -261,6 +261,7 @@ final class PermissionService
             'ledger/contact-report.php' => ['feature' => 'ledger'],
             'ledger/contact-create.php' => ['feature' => 'ledger'],
             'ledger/contact-update.php' => ['feature' => 'ledger'],
+            'ledger/contact-delete.php' => ['feature' => 'ledger'],
             'ledger/entry-create.php' => ['feature' => 'ledger'],
             'ledger/entry-update.php' => ['feature' => 'ledger'],
             'ledger/entry-delete.php' => ['feature' => 'ledger'],
@@ -283,6 +284,7 @@ final class PermissionService
             'admin/users/list.php' => ['super_admin' => true, 'module' => 'users_access'],
             'admin/users/create.php' => ['super_admin' => true, 'module' => 'users_access'],
             'admin/users/update.php' => ['super_admin' => true, 'module' => 'users_access'],
+            'admin/users/delete.php' => ['super_admin' => true, 'module' => 'users_access'],
             'workspace/users.php' => ['features' => ['transactions', 'accounts', 'categories', 'budgets', 'charts', 'reports', 'assets']],
         ];
     }

@@ -58,6 +58,10 @@ final class SchemaService
             self::safeExec($pdo, 'ALTER TABLE users ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1 AFTER permissions_json');
         }
 
+        if (!self::columnExists($pdo, 'users', 'deleted_at')) {
+            self::safeExec($pdo, 'ALTER TABLE users ADD COLUMN deleted_at DATETIME NULL AFTER is_active');
+        }
+
         if (!self::columnExists($pdo, 'users', 'workspace_owner_user_id')) {
             $workspaceOwnerColumnType = self::resolveColumnType($pdo, 'users', 'id', 'INT UNSIGNED');
             self::safeExec(
@@ -111,6 +115,7 @@ final class SchemaService
                     COALESCE(transaction_access_json, JSON_OBJECT())
                  ),
                  is_active = COALESCE(is_active, 1),
+                 deleted_at = deleted_at,
                  allowed_account_ids_json = allowed_account_ids_json"
         );
 

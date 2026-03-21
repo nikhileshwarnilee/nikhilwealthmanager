@@ -17,6 +17,9 @@ final class AuthMiddleware
         }
 
         $user = AuthService::findUserById((int) $payload['uid']);
+        if (!empty($user['deleted_at'])) {
+            Response::error('This account has been removed. Contact your super admin.', 403);
+        }
         if (!(bool) ($user['is_active'] ?? true)) {
             Response::error('This account is inactive. Contact your super admin.', 403);
         }

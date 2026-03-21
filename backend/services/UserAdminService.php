@@ -8,9 +8,10 @@ final class UserAdminService
     {
         $workspaceOwnerId = AuthService::workspaceOwnerId($actorUser);
         $stmt = db()->prepare(
-            'SELECT id, name, email, role, permissions_json, is_active, allowed_account_ids_json, default_account_id, workspace_owner_user_id, transaction_access_json, created_at, updated_at
+            'SELECT id, name, email, role, permissions_json, is_active, deleted_at, allowed_account_ids_json, default_account_id, workspace_owner_user_id, transaction_access_json, created_at, updated_at
              FROM users
              WHERE COALESCE(workspace_owner_user_id, id) = :workspace_owner_user_id
+               AND deleted_at IS NULL
              ORDER BY created_at ASC, id ASC'
         );
         $stmt->execute([':workspace_owner_user_id' => $workspaceOwnerId]);
@@ -79,9 +80,15 @@ final class UserAdminService
         if (!$current) {
             Response::error('User not found.', 404);
         }
+        if (!empty($current['deleted_at'])) {
+            Response::error('User not found.', 404);
+        }
 
         if (AuthService::workspaceOwnerId($current) !== AuthService::workspaceOwnerId($actorUser)) {
             Response::error('User not found.', 404);
+        }
+        if (PermissionService::isSuperAdmin($current)) {
+            Response::error('Super admin settings cannot be edited here.', 422);
         }
 
         $name = array_key_exists('name', $input)
@@ -118,14 +125,6 @@ final class UserAdminService
 
         if ((int) $actorUser['id'] === $targetUserId && !$isActive) {
             Response::error('You cannot deactivate your own account.', 422);
-        }
-
-        if (
-            PermissionService::isSuperAdmin($current)
-            && (!$isActive || $role !== 'super_admin')
-            && !self::hasAnotherActiveSuperAdmin($targetUserId)
-        ) {
-            Response::error('At least one active super admin is required.', 422);
         }
 
         $pdo = db();
@@ -185,6 +184,55 @@ final class UserAdminService
         return AuthService::findUserById($targetUserId);
     }
 
+    public static function deleteUser(int $targetUserId, array $actorUser): void
+    {
+        $stmt = db()->prepare(
+            'SELECT id, name, email, role, is_active, deleted_at, workspace_owner_user_id
+             FROM users
+             WHERE id = :id
+             LIMIT 1'
+        );
+        $stmt->execute([':id' => $targetUserId]);
+        $current = $stmt->fetch();
+
+        if (!$current || !empty($current['deleted_at'])) {
+            Response::error('User not found.', 404);
+        }
+
+        if (AuthService::workspaceOwnerId($current) !== AuthService::workspaceOwnerId($actorUser)) {
+            Response::error('User not found.', 404);
+        }
+
+        if ((int) ($actorUser['id'] ?? 0) === $targetUserId) {
+            Response::error('You cannot delete your own account.', 422);
+        }
+
+        if (PermissionService::normalizeRole((string) ($current['role'] ?? 'user')) === 'super_admin') {
+            Response::error('Super admin accounts cannot be deleted from Users & Access.', 422);
+        }
+
+        if ((bool) ($current['is_active'] ?? false)) {
+            Response::error('Deactivate the user first, then delete the account.', 422);
+        }
+
+        $deletedEmail = self::buildDeletedLoginEmail($targetUserId);
+        $update = db()->prepare(
+            'UPDATE users
+             SET is_active = 0,
+                 deleted_at = NOW(),
+                 email = :email
+             WHERE id = :id
+               AND deleted_at IS NULL
+             LIMIT 1'
+        );
+        $update->execute([
+            ':email' => $deletedEmail,
+            ':id' => $targetUserId,
+        ]);
+
+        TokenService::revokeAllForUser($targetUserId);
+    }
+
     private static function hasAnotherActiveSuperAdmin(int $excludedUserId): bool
     {
         $stmt = db()->prepare(
@@ -192,6 +240,7 @@ final class UserAdminService
              FROM users
              WHERE role = :role
                AND is_active = 1
+               AND deleted_at IS NULL
                AND id <> :id
              LIMIT 1'
         );
@@ -201,5 +250,10 @@ final class UserAdminService
         ]);
 
         return (bool) $stmt->fetch();
+    }
+
+    private static function buildDeletedLoginEmail(int $userId): string
+    {
+        return sprintf('deleted-user-%d-%d@removed.local', $userId, time());
     }
 }

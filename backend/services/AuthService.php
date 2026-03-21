@@ -152,9 +152,10 @@ final class AuthService
     public static function login(string $email, string $password): array
     {
         $stmt = db()->prepare(
-            'SELECT id, name, email, role, permissions_json, is_active, allowed_account_ids_json, default_account_id, workspace_owner_user_id, transaction_access_json, password_hash, created_at, updated_at
+            'SELECT id, name, email, role, permissions_json, is_active, deleted_at, allowed_account_ids_json, default_account_id, workspace_owner_user_id, transaction_access_json, password_hash, created_at, updated_at
              FROM users
              WHERE email = :email
+               AND deleted_at IS NULL
              LIMIT 1'
         );
         $stmt->execute([':email' => $email]);
@@ -175,7 +176,7 @@ final class AuthService
     public static function findUserById(int $id): array
     {
         $stmt = db()->prepare(
-            'SELECT id, name, email, role, permissions_json, is_active, allowed_account_ids_json, default_account_id, workspace_owner_user_id, transaction_access_json, created_at, updated_at
+            'SELECT id, name, email, role, permissions_json, is_active, deleted_at, allowed_account_ids_json, default_account_id, workspace_owner_user_id, transaction_access_json, created_at, updated_at
              FROM users
              WHERE id = :id
              LIMIT 1'
@@ -207,6 +208,8 @@ final class AuthService
                 ? PermissionService::allTransactionMutationScopes()
                 : $transactionAccess,
             'is_active' => (bool) ($row['is_active'] ?? true),
+            'deleted_at' => $row['deleted_at'] ?? null,
+            'is_deleted' => !empty($row['deleted_at']),
             'workspace_owner_user_id' => $workspaceOwnerId,
             'workspace_user_id' => $workspaceOwnerId,
             'allowed_account_ids' => UserAccountAccessService::normalizeAccountIds(
@@ -244,7 +247,7 @@ final class AuthService
     public static function assertEmailAvailable(string $email, ?int $excludeUserId = null, ?PDO $pdo = null): void
     {
         $pdo = $pdo ?? db();
-        $sql = 'SELECT id FROM users WHERE email = :email';
+        $sql = 'SELECT id FROM users WHERE email = :email AND deleted_at IS NULL';
         $params = [':email' => strtolower($email)];
 
         if ($excludeUserId !== null) {
@@ -372,7 +375,7 @@ final class AuthService
     public static function userCount(?PDO $pdo = null): int
     {
         $pdo = $pdo ?? db();
-        $stmt = $pdo->query('SELECT COUNT(*) AS total FROM users');
+        $stmt = $pdo->query('SELECT COUNT(*) AS total FROM users WHERE deleted_at IS NULL');
         return (int) (($stmt->fetch()['total'] ?? 0));
     }
 

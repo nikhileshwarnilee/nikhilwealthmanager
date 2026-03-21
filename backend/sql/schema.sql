@@ -27,6 +27,7 @@ CREATE TABLE users (
   role VARCHAR(30) NOT NULL DEFAULT 'user',
   permissions_json JSON NULL,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
+  deleted_at DATETIME NULL,
   workspace_owner_user_id BIGINT UNSIGNED NULL,
   allowed_account_ids_json JSON NULL,
   default_account_id BIGINT UNSIGNED NULL,

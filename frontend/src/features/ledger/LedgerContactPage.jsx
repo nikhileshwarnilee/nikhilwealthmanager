@@ -9,6 +9,7 @@ import ReportExportSheet from '../../components/ReportExportSheet';
 import { useToast } from '../../app/ToastContext';
 import {
   createLedgerEntry,
+  deleteLedgerContact,
   deleteLedgerEntry,
   fetchLedgerContactReport,
   fetchLedgerContactView,
@@ -71,6 +72,8 @@ export default function LedgerContactPage() {
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [deletingContact, setDeletingContact] = useState(false);
+  const [confirmDeleteContact, setConfirmDeleteContact] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 
   const load = useCallback(async () => {
@@ -200,6 +203,21 @@ export default function LedgerContactPage() {
       pushToast({ type: 'danger', message: normalizeApiError(error) });
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const onDeleteContact = async () => {
+    if (!contactId) return;
+    setDeletingContact(true);
+    try {
+      await deleteLedgerContact(contactId);
+      setConfirmDeleteContact(false);
+      pushToast({ type: 'success', message: 'Ledger contact removed.' });
+      navigate('/ledger?tab=contacts', { replace: true });
+    } catch (error) {
+      pushToast({ type: 'danger', message: normalizeApiError(error) });
+    } finally {
+      setDeletingContact(false);
     }
   };
 
@@ -346,10 +364,11 @@ export default function LedgerContactPage() {
         </div>
       </section>
 
-      <section className="grid grid-cols-3 gap-3">
+      <section className="grid grid-cols-2 gap-3">
         <button type="button" className="rounded-xl bg-primary px-3 py-3 text-sm font-semibold text-white" onClick={() => openEntrySheet('receivable')}>Add Receivable</button>
         <button type="button" className="rounded-xl bg-slate-900 px-3 py-3 text-sm font-semibold text-white dark:bg-slate-700" onClick={() => openEntrySheet('payable')}>Add Payable</button>
         <button type="button" className="rounded-xl bg-slate-100 px-3 py-3 text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200" onClick={() => setContactFormOpen(true)}>Edit Contact</button>
+        <button type="button" className="rounded-xl bg-red-100 px-3 py-3 text-sm font-semibold text-danger dark:bg-red-900/30" onClick={() => setConfirmDeleteContact(true)}>Delete Contact</button>
       </section>
 
       <section className="card-surface rounded-xl p-3">
@@ -480,6 +499,19 @@ export default function LedgerContactPage() {
           <div className="grid grid-cols-2 gap-2">
             <button type="button" className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200" onClick={() => setDeleteTarget(null)}>Cancel</button>
             <button type="button" disabled={deleting} className="rounded-xl bg-danger px-3 py-2 text-sm font-semibold text-white disabled:opacity-70" onClick={onDeleteEntry}>{deleting ? 'Removing...' : 'Remove'}</button>
+          </div>
+        </div>
+      </BottomSheet>
+
+      <BottomSheet open={confirmDeleteContact} onClose={() => setConfirmDeleteContact(false)} title="Delete Contact">
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            Delete <strong>{contact?.name || 'this contact'}</strong> from Ledger? Open ledger items for this contact will be closed and hidden from Ledger,
+            while converted income and expense transactions will stay safe.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200" onClick={() => setConfirmDeleteContact(false)}>Cancel</button>
+            <button type="button" disabled={deletingContact} className="rounded-xl bg-danger px-3 py-2 text-sm font-semibold text-white disabled:opacity-70" onClick={onDeleteContact}>{deletingContact ? 'Deleting...' : 'Delete Contact'}</button>
           </div>
         </div>
       </BottomSheet>

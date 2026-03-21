@@ -23,6 +23,7 @@ export default function UserStripSelector({
       name: user.name,
       initials: initialsForUser(user.name),
       is_active: user.is_active !== false,
+      is_deleted: user.is_deleted === true,
       tone: 'user'
     }))
   ];
@@ -54,7 +55,9 @@ export default function UserStripSelector({
                 {item.tone === 'muted' ? <Icon name="people" size={14} /> : <span className="text-[10px] font-bold">{item.initials}</span>}
               </span>
               <p className="truncate text-[10px] font-semibold">{item.name}</p>
-              {item.tone === 'user' && !item.is_active ? (
+              {item.tone === 'user' && item.is_deleted ? (
+                <p className="mt-0.5 truncate text-[9px] text-slate-400 dark:text-slate-500">Deleted</p>
+              ) : item.tone === 'user' && !item.is_active ? (
                 <p className="mt-0.5 truncate text-[9px] text-slate-400 dark:text-slate-500">Inactive</p>
               ) : null}
             </button>

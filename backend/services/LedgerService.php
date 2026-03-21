@@ -14,9 +14,18 @@ final class LedgerService
                 COALESCE(SUM(CASE WHEN status = \'open\' AND direction = \'payable\' THEN amount ELSE 0 END), 0) AS payable_total,
                 SUM(CASE WHEN status = \'open\' THEN 1 ELSE 0 END) AS open_entries_count
              FROM ledger_entries
-             WHERE user_id = :user_id'
+             WHERE user_id = :user_id
+               AND contact_id IN (
+                    SELECT id
+                    FROM ledger_contacts
+                    WHERE user_id = :user_id_contacts
+                      AND is_deleted = 0
+               )'
         );
-        $stmt->execute([':user_id' => $userId]);
+        $stmt->execute([
+            ':user_id' => $userId,
+            ':user_id_contacts' => $userId,
+        ]);
         $row = $stmt->fetch() ?: [];
 
         $contactsStmt = db()->prepare(
@@ -237,6 +246,52 @@ final class LedgerService
         }
 
         return self::getContact($contactId, $userId);
+    }
+
+    public static function deleteContact(int $userId, int $contactId): array
+    {
+        self::assertModuleEnabled($userId);
+        $contact = self::getContact($contactId, $userId);
+
+        $pdo = db();
+        $pdo->beginTransaction();
+        try {
+            $cancelStmt = $pdo->prepare(
+                'UPDATE ledger_entries
+                 SET status = \'cancelled\'
+                 WHERE user_id = :user_id
+                   AND contact_id = :contact_id
+                   AND status = \'open\''
+            );
+            $cancelStmt->execute([
+                ':user_id' => $userId,
+                ':contact_id' => $contactId,
+            ]);
+
+            $deleteStmt = $pdo->prepare(
+                'UPDATE ledger_contacts
+                 SET is_deleted = 1
+                 WHERE id = :id
+                   AND user_id = :user_id
+                   AND is_deleted = 0
+                 LIMIT 1'
+            );
+            $deleteStmt->execute([
+                ':id' => $contactId,
+                ':user_id' => $userId,
+            ]);
+
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            $pdo->rollBack();
+            throw $exception;
+        }
+
+        return [
+            'contact_id' => $contactId,
+            'name' => (string) ($contact['name'] ?? ''),
+            'status' => 'deleted',
+        ];
     }
 
     public static function getContact(int $contactId, int $userId): array

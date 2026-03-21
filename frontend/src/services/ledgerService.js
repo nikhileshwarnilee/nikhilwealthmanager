@@ -45,6 +45,11 @@ export async function updateLedgerContact(payload) {
   return unwrapApiResponse(response);
 }
 
+export async function deleteLedgerContact(id) {
+  const response = await http.delete('/ledger/contact-delete.php', { data: { id } });
+  return unwrapApiResponse(response);
+}
+
 export async function createLedgerEntry(payload) {
   const response = await http.post('/ledger/entry-create.php', payload);
   return unwrapApiResponse(response);

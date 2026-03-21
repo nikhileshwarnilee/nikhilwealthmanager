@@ -14,3 +14,8 @@ export async function updateAdminUser(payload) {
   const response = await http.post('/admin/users/update.php', payload);
   return unwrapApiResponse(response);
 }
+
+export async function deleteAdminUser(id) {
+  const response = await http.post('/admin/users/delete.php', { id });
+  return unwrapApiResponse(response);
+}
