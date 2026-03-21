@@ -6,7 +6,8 @@ require_once dirname(__DIR__, 2) . '/bootstrap.php';
 
 Request::enforceMethod('GET');
 $user = AuthMiddleware::user();
-$userId = (int) $user['id'];
+$userId = AuthService::workspaceOwnerId($user);
+$allowedAccountIds = UserAccountAccessService::allowedAccountIds($user);
 $id = Validator::positiveInt(Request::query('id', 0), 'id');
 $month = trim((string) Request::query('month', date('Y-m')));
 $dateFromRaw = trim((string) Request::query('date_from', ''));
@@ -68,6 +69,13 @@ $statsParams = [
     ':stats_user_id' => $userId,
     ':stats_category_id' => $id,
 ];
+$statsSql .= UserAccountAccessService::buildTransactionScopeSql(
+    'transactions',
+    $allowedAccountIds,
+    $statsParams,
+    'category_view_stats',
+    false
+);
 if ($rangeStart !== null && $rangeEnd !== null) {
     $statsSql .= ' AND transaction_date BETWEEN :stats_start_date AND :stats_end_date';
     $statsParams[':stats_start_date'] = $rangeStart;

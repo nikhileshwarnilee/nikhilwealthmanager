@@ -6,7 +6,8 @@ require_once dirname(__DIR__, 2) . '/bootstrap.php';
 
 Request::enforceMethod('GET');
 $user = AuthMiddleware::user();
-$userId = (int) $user['id'];
+$userId = AuthService::workspaceOwnerId($user);
+$allowedAccountIds = UserAccountAccessService::allowedAccountIds($user);
 $id = Validator::positiveInt(Request::query('id', 0), 'id');
 $month = trim((string) Request::query('month', date('Y-m')));
 $dateFromRaw = trim((string) Request::query('date_from', ''));
@@ -37,6 +38,10 @@ if ($useCustomRange) {
 } elseif ($period !== 'all') {
     $rangeStart = $period . '-01 00:00:00';
     $rangeEnd = date('Y-m-t 23:59:59', strtotime($rangeStart));
+}
+
+if ($allowedAccountIds !== []) {
+    UserAccountAccessService::assertAllowedAccount($id, $allowedAccountIds);
 }
 
 $accountStmt = db()->prepare(

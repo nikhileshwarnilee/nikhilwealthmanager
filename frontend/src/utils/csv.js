@@ -6,7 +6,12 @@ function sanitizeCell(value) {
   return text;
 }
 
-export function exportTransactionsToCsv(transactions, filename = `transactions-${Date.now()}.csv`) {
+export function exportTransactionsToCsv(
+  transactions,
+  filename = `transactions-${Date.now()}.csv`,
+  options = {}
+) {
+  const includeBusiness = options.includeBusiness !== false;
   const header = [
     'ID',
     'Date',
@@ -21,21 +26,30 @@ export function exportTransactionsToCsv(transactions, filename = `transactions-$
     'Location',
     'Receipt'
   ];
+  if (includeBusiness) {
+    header.splice(9, 0, 'Business');
+  }
 
-  const rows = (transactions || []).map((txn) => [
-    sanitizeCell(txn.id),
-    sanitizeCell(txn.transaction_date),
-    sanitizeCell(txn.type),
-    sanitizeCell(txn.amount),
-    sanitizeCell(txn.from_account_name),
-    sanitizeCell(txn.to_account_name),
-    sanitizeCell(txn.from_asset_type_name),
-    sanitizeCell(txn.to_asset_type_name),
-    sanitizeCell(txn.category_name),
-    sanitizeCell(txn.note),
-    sanitizeCell(txn.location),
-    sanitizeCell(txn.receipt_path)
-  ]);
+  const rows = (transactions || []).map((txn) => {
+    const row = [
+      sanitizeCell(txn.id),
+      sanitizeCell(txn.transaction_date),
+      sanitizeCell(txn.type),
+      sanitizeCell(txn.amount),
+      sanitizeCell(txn.from_account_name),
+      sanitizeCell(txn.to_account_name),
+      sanitizeCell(txn.from_asset_type_name),
+      sanitizeCell(txn.to_asset_type_name),
+      sanitizeCell(txn.category_name),
+      sanitizeCell(txn.note),
+      sanitizeCell(txn.location),
+      sanitizeCell(txn.receipt_path)
+    ];
+    if (includeBusiness) {
+      row.splice(9, 0, sanitizeCell(txn.business_name || txn.business?.name));
+    }
+    return row;
+  });
 
   const all = [header, ...rows]
     .map((row) => row.map((col) => `"${String(col ?? '').replace(/"/g, '""')}"`).join(','))

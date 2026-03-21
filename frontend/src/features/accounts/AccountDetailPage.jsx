@@ -5,17 +5,20 @@ import EmptyState from '../../components/EmptyState';
 import HorizontalSelector from '../../components/HorizontalSelector';
 import Icon from '../../components/Icon';
 import TransactionItem from '../../components/TransactionItem';
+import { useAuth } from '../../app/AuthContext';
 import { useToast } from '../../app/ToastContext';
 import { useInfiniteScroll } from '../../hooks/useInfiniteScroll';
 import { usePaginatedTransactions } from '../../hooks/usePaginatedTransactions';
 import { fetchAccounts } from '../../services/accountService';
 import { normalizeApiError } from '../../services/http';
 import { currentMonthKey, isAllMonths, formatCurrency, monthDateRange, monthSelectorOptions } from '../../utils/format';
+import { canEditTransaction } from '../../utils/permissions';
 
 export default function AccountDetailPage() {
   const navigate = useNavigate();
   const { id } = useParams();
   const accountId = String(id || '');
+  const { user } = useAuth();
   const { pushToast } = useToast();
 
   const [month, setMonth] = useState(currentMonthKey());
@@ -177,7 +180,7 @@ export default function AccountDetailPage() {
               <TransactionItem
                 key={txn.id}
                 txn={txn}
-                onEdit={() => navigate(`/transactions/${txn.id}/edit`)}
+                onEdit={canEditTransaction(user, txn) ? () => navigate(`/transactions/${txn.id}/edit`) : undefined}
               />
             ))}
           </div>

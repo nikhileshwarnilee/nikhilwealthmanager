@@ -2,19 +2,33 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useNavigationType, useParams, useSearchParams } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import AppShell from '../../components/AppShell';
+import BusinessStripSelector from '../../components/BusinessStripSelector';
 import CollapsibleIntervalSection from '../../components/CollapsibleIntervalSection';
 import EmptyState from '../../components/EmptyState';
 import Icon, { categoryIconKey } from '../../components/Icon';
+import ReportExportSheet from '../../components/ReportExportSheet';
 import TransactionItem from '../../components/TransactionItem';
+import UserStripSelector from '../../components/UserStripSelector';
+import { useAuth } from '../../app/AuthContext';
 import { useToast } from '../../app/ToastContext';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useInfiniteScroll } from '../../hooks/useInfiniteScroll';
 import { usePaginatedTransactions } from '../../hooks/usePaginatedTransactions';
 import { useRouteState } from '../../hooks/useRouteState';
+import { useWorkspaceUsers } from '../../hooks/useWorkspaceUsers';
+import { fetchBusinesses } from '../../services/businessService';
 import { normalizeApiError } from '../../services/http';
 import { fetchCategoryBreakdownReport } from '../../services/reportService';
-import { exportTransactionsToCsv } from '../../utils/csv';
 import { formatCurrency, formatDate } from '../../utils/format';
+import {
+  buildReportDefinition,
+  buildTransactionReportDefinition,
+  exportReportDefinition,
+  filterTransactionsBySearch,
+  formatReportDateRange,
+  reportDateRangeFromInterval,
+  validateReportDateRange
+} from '../../utils/reportExport';
 import {
   createDefaultIntervalState,
   intervalDateRange,
@@ -24,6 +38,8 @@ import {
   parseIntervalFromParams,
   shiftIntervalState
 } from '../../utils/intervals';
+import { isModuleEnabled } from '../../utils/modules';
+import { shouldShowUserAttribution } from '../../utils/userAttribution';
 
 function toType(value) {
   return value === 'income' ? 'income' : 'expense';
@@ -33,7 +49,10 @@ export default function CategoryBreakdownPage() {
   const navigate = useNavigate();
   const navigationType = useNavigationType();
   const { id } = useParams();
+  const { settings } = useAuth();
   const { pushToast } = useToast();
+  const businessesEnabled = isModuleEnabled(settings, 'businesses');
+  const showUserAttribution = shouldShowUserAttribution(settings);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const categoryId = Number(id || 0);
@@ -44,11 +63,21 @@ export default function CategoryBreakdownPage() {
   const [type, setType] = useRouteState(`breakdown-${categoryId}-type`, () =>
     toType(searchParams.get('type'))
   );
+  const [businessId, setBusinessId] = useRouteState(
+    `breakdown-${categoryId}-business-filter`,
+    () => String(searchParams.get('business_id') || '').trim()
+  );
+  const [createdByUserId, setCreatedByUserId] = useRouteState(
+    `breakdown-${categoryId}-user-filter`,
+    () => String(searchParams.get('created_by_user_id') || '').trim()
+  );
 
   const [loading, setLoading] = useState(true);
   const [searchOpen, setSearchOpen] = useRouteState(`breakdown-${categoryId}-search-open`, false);
   const [searchTerm, setSearchTerm] = useRouteState(`breakdown-${categoryId}-search-term`, '');
   const [report, setReport] = useState(null);
+  const [businesses, setBusinesses] = useState([]);
+  const [exportOpen, setExportOpen] = useState(false);
   const paramsString = searchParams.toString();
   const loadMoreRef = useRef(null);
   const initializedRef = useRef(false);
@@ -56,6 +85,14 @@ export default function CategoryBreakdownPage() {
   const debouncedSearch = useDebounce(searchTerm, 300);
   const normalizedSearch = debouncedSearch.trim();
   const intervalLabel = useMemo(() => intervalDisplayLabel(interval), [interval]);
+  const { users: workspaceUsers, loading: workspaceUsersLoading } = useWorkspaceUsers(showUserAttribution);
+  const normalizedCreatedByUserId = useMemo(() => {
+    if (!showUserAttribution) return '';
+    const raw = String(createdByUserId || '').trim();
+    if (!raw) return '';
+    if (workspaceUsersLoading) return raw;
+    return workspaceUsers.some((workspaceUser) => String(workspaceUser.id) === raw) ? raw : '';
+  }, [createdByUserId, showUserAttribution, workspaceUsers, workspaceUsersLoading]);
 
   useEffect(() => {
     if (initializedRef.current) return;
@@ -65,9 +102,11 @@ export default function CategoryBreakdownPage() {
 
     setInterval(parseIntervalFromParams(searchParams) || createDefaultIntervalState());
     setType(toType(searchParams.get('type')));
+    setBusinessId(String(searchParams.get('business_id') || '').trim());
+    setCreatedByUserId(String(searchParams.get('created_by_user_id') || '').trim());
     setSearchTerm('');
     setSearchOpen(false);
-  }, [navigationType, searchParams, setInterval, setSearchOpen, setSearchTerm, setType]);
+  }, [navigationType, searchParams, setBusinessId, setCreatedByUserId, setInterval, setSearchOpen, setSearchTerm, setType]);
 
   useEffect(() => {
     const next = new URLSearchParams();
@@ -77,10 +116,29 @@ export default function CategoryBreakdownPage() {
     if (type !== 'expense') {
       next.set('type', type);
     }
+    if (businessesEnabled && businessId) {
+      next.set('business_id', businessId);
+    }
+    if (showUserAttribution && normalizedCreatedByUserId) {
+      next.set('created_by_user_id', normalizedCreatedByUserId);
+    }
     if (next.toString() !== paramsString) {
       setSearchParams(next, { replace: true });
     }
-  }, [interval, paramsString, setSearchParams, type]);
+  }, [businessId, businessesEnabled, interval, normalizedCreatedByUserId, paramsString, setSearchParams, showUserAttribution, type]);
+
+  const loadBusinesses = useCallback(async () => {
+    if (!businessesEnabled) {
+      setBusinesses([]);
+      return;
+    }
+    try {
+      const response = await fetchBusinesses();
+      setBusinesses(response.businesses || []);
+    } catch (error) {
+      pushToast({ type: 'danger', message: normalizeApiError(error) });
+    }
+  }, [businessesEnabled, pushToast]);
 
   const load = useCallback(async () => {
     if (!categoryId) {
@@ -93,7 +151,9 @@ export default function CategoryBreakdownPage() {
       const response = await fetchCategoryBreakdownReport({
         category_id: categoryId,
         ...intervalSummaryParams(interval),
-        type
+        type,
+        business_id: businessesEnabled && businessId ? businessId : undefined,
+        created_by_user_id: showUserAttribution && normalizedCreatedByUserId ? normalizedCreatedByUserId : undefined
       });
       setReport(response || null);
     } catch (error) {
@@ -102,11 +162,31 @@ export default function CategoryBreakdownPage() {
     } finally {
       setLoading(false);
     }
-  }, [categoryId, interval, pushToast, type]);
+  }, [businessId, businessesEnabled, categoryId, interval, normalizedCreatedByUserId, pushToast, showUserAttribution, type]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    loadBusinesses();
+  }, [loadBusinesses]);
+  useEffect(() => {
+    if (!businessesEnabled && businessId) {
+      setBusinessId('');
+    }
+  }, [businessId, businessesEnabled, setBusinessId]);
+  useEffect(() => {
+    const raw = String(createdByUserId || '').trim();
+    if (showUserAttribution && !workspaceUsersLoading && raw && normalizedCreatedByUserId === '') {
+      setCreatedByUserId('');
+    }
+  }, [createdByUserId, normalizedCreatedByUserId, setCreatedByUserId, showUserAttribution, workspaceUsersLoading]);
+  useEffect(() => {
+    if (!showUserAttribution && String(createdByUserId || '').trim() !== '') {
+      setCreatedByUserId('');
+    }
+  }, [createdByUserId, setCreatedByUserId, showUserAttribution]);
 
   const dailyData = useMemo(
     () =>
@@ -122,9 +202,11 @@ export default function CategoryBreakdownPage() {
       ...(normalizedSearch ? {} : (intervalDateRange(interval) || {})),
       category_id: categoryId,
       type,
+      business_id: businessesEnabled ? businessId : '',
+      created_by_user_id: showUserAttribution ? normalizedCreatedByUserId : '',
       search: normalizedSearch
     }),
-    [categoryId, interval, normalizedSearch, type]
+    [businessId, businessesEnabled, categoryId, interval, normalizedCreatedByUserId, normalizedSearch, showUserAttribution, type]
   );
 
   const onTransactionError = useCallback(
@@ -151,6 +233,15 @@ export default function CategoryBreakdownPage() {
   useInfiniteScroll(loadMoreRef, loadMore, hasMore && !listLoading && !loadingMore);
 
   const filteredTransactions = transactions;
+  const defaultExportRange = useMemo(() => reportDateRangeFromInterval(interval), [interval]);
+  const selectedBusiness = useMemo(
+    () => businesses.find((item) => String(item.id) === String(businessId)) || null,
+    [businessId, businesses]
+  );
+  const selectedWorkspaceUser = useMemo(
+    () => workspaceUsers.find((workspaceUser) => String(workspaceUser.id) === String(normalizedCreatedByUserId)) || null,
+    [normalizedCreatedByUserId, workspaceUsers]
+  );
 
   const category = report?.category || null;
   const stats = report?.stats || {};
@@ -162,6 +253,105 @@ export default function CategoryBreakdownPage() {
   const onSwipeNextInterval = useCallback(() => {
     setInterval((prev) => shiftIntervalState(prev, 1));
   }, []);
+  const onGenerateReport = useCallback(
+    async ({ format, fromDate, toDate }) => {
+      try {
+        const range = validateReportDateRange({ fromDate, toDate });
+        const reportData = await fetchCategoryBreakdownReport({
+          category_id: categoryId,
+          date_from: range.fromDate,
+          date_to: range.toDate,
+          type,
+          business_id: businessesEnabled && businessId ? businessId : undefined,
+          created_by_user_id: showUserAttribution && normalizedCreatedByUserId ? normalizedCreatedByUserId : undefined
+        });
+
+        const transactionDefinition = buildTransactionReportDefinition({
+          title: `${reportData?.category?.name || category?.name || 'Category'} Breakdown Report`,
+          subtitle: 'Category transactions',
+          fileName: `${reportData?.category?.name || category?.name || 'category'}-breakdown-report`,
+          dateRangeLabel: formatReportDateRange(range.fromDate, range.toDate),
+          transactions: filterTransactionsBySearch(reportData?.transactions || [], normalizedSearch),
+          includeBusiness: businessesEnabled,
+          includeCreatedBy: showUserAttribution,
+          meta: [],
+          sheetName: 'Transactions'
+        });
+
+        const definition = buildReportDefinition({
+          title: `${reportData?.category?.name || category?.name || 'Category'} Breakdown Report`,
+          subtitle: `${type === 'expense' ? 'Expense' : 'Income'} analysis with daily movement and transactions`,
+          fileName: `${reportData?.category?.name || category?.name || 'category'}-breakdown-report`,
+          dateRangeLabel: formatReportDateRange(range.fromDate, range.toDate),
+          meta: [
+            { label: 'Category', value: reportData?.category?.name || category?.name || '-' },
+            { label: 'Type', value: type },
+            {
+              label: 'Business',
+              value: businessesEnabled ? (selectedBusiness?.name || 'All businesses') : 'Businesses module off'
+            },
+            {
+              label: 'User',
+              value: showUserAttribution ? (selectedWorkspaceUser?.name || 'All users') : 'Single-user workspace'
+            },
+            { label: 'View Interval', value: intervalLabel },
+            {
+              label: 'Search Filter',
+              value: normalizedSearch ? `${normalizedSearch} (applied to transaction table)` : 'None'
+            }
+          ],
+          summary: [
+            { label: 'Total Amount', value: formatCurrency(reportData?.total_amount || 0) },
+            { label: 'Transactions', value: String(reportData?.stats?.transaction_count || 0) },
+            { label: 'Average', value: formatCurrency(reportData?.stats?.avg_amount || 0) },
+            {
+              label: 'Biggest Transaction',
+              value: formatCurrency(reportData?.stats?.biggest_transaction?.amount || 0)
+            },
+            {
+              label: 'Busiest Day',
+              value: reportData?.stats?.busiest_day?.date ? formatDate(reportData.stats.busiest_day.date) : '-'
+            }
+          ],
+          tables: [
+            {
+              name: 'Daily Breakdown',
+              columns: [
+                { key: 'date', label: 'Date' },
+                { key: 'amount', label: 'Amount' },
+                { key: 'count', label: 'Transactions' }
+              ],
+              rows: (reportData?.daily_breakdown || []).map((item) => ({
+                date: formatDate(item.date),
+                amount: formatCurrency(item.amount || 0),
+                count: String(item.count || 0)
+              }))
+            },
+            ...transactionDefinition.tables
+          ]
+        });
+
+        await exportReportDefinition(format, definition);
+        pushToast({ type: 'success', message: `${format.toUpperCase()} report generated.` });
+      } catch (error) {
+        pushToast({ type: 'danger', message: error?.message || normalizeApiError(error) });
+      }
+    },
+    [
+      businessesEnabled,
+      businessId,
+      category?.name,
+      categoryId,
+      intervalLabel,
+      normalizedCreatedByUserId,
+      normalizedSearch,
+      pushToast,
+      selectedBusiness?.name,
+      selectedWorkspaceUser?.name,
+      showUserAttribution,
+      type
+    ]
+  );
 
   return (
     <AppShell
@@ -177,7 +367,7 @@ export default function CategoryBreakdownPage() {
       onToggleSearch={() => setSearchOpen((prev) => !prev)}
       onSearchChange={setSearchTerm}
       searchPlaceholder="Search transactions"
-      onExport={() => exportTransactionsToCsv(filteredTransactions)}
+      onExport={() => setExportOpen(true)}
       intervalSwipeEnabled={interval.mode !== 'all_time'}
       onIntervalSwipePrev={onSwipePrevInterval}
       onIntervalSwipeNext={onSwipeNextInterval}
@@ -217,6 +407,32 @@ export default function CategoryBreakdownPage() {
 
           <section className="card-surface rounded-xl p-2">
             <CollapsibleIntervalSection value={interval} onChange={setInterval} />
+            {businessesEnabled ? (
+              <div className="mt-2">
+                <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  Business
+                </p>
+                <BusinessStripSelector
+                  businesses={businesses}
+                  selected={businessId}
+                  onSelect={setBusinessId}
+                  emptyLabel="All businesses"
+                />
+              </div>
+            ) : null}
+            {showUserAttribution ? (
+              <div className="mt-2">
+                <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  User
+                </p>
+                <UserStripSelector
+                  users={workspaceUsers}
+                  selected={normalizedCreatedByUserId}
+                  onSelect={setCreatedByUserId}
+                  emptyLabel="All users"
+                />
+              </div>
+            ) : null}
           </section>
 
           <section className="card-surface rounded-xl p-2">
@@ -342,6 +558,15 @@ export default function CategoryBreakdownPage() {
           </button>
         </section>
       )}
+
+      <ReportExportSheet
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title={`${category?.name || 'Category'} Breakdown Report`}
+        subtitle="Generate a PDF, Excel, or CSV category breakdown report"
+        defaultRange={defaultExportRange}
+        onGenerate={onGenerateReport}
+      />
     </AppShell>
   );
 }

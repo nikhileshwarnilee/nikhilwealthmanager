@@ -10,7 +10,7 @@ if (!in_array(Request::method(), ['PUT', 'PATCH', 'POST'], true)) {
 }
 
 $user = AuthMiddleware::user();
-$userId = (int) $user['id'];
+$userId = AuthService::workspaceOwnerId($user);
 $input = Request::body();
 
 $id = Validator::positiveInt($input['id'] ?? 0, 'id');

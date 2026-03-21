@@ -57,8 +57,8 @@ export default function HeaderBar({
               type="button"
               className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
               onClick={onExport}
-              aria-label="Export CSV"
-              title="Export CSV"
+              aria-label="Export report"
+              title="Export report"
             >
               <Icon name="download" size={16} />
             </button>

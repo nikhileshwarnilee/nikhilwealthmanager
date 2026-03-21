@@ -5,7 +5,9 @@ import BottomSheet from '../../components/BottomSheet';
 import CollapsibleIntervalSection from '../../components/CollapsibleIntervalSection';
 import EmptyState from '../../components/EmptyState';
 import Icon from '../../components/Icon';
+import ReportExportSheet from '../../components/ReportExportSheet';
 import TransactionItem from '../../components/TransactionItem';
+import { useAuth } from '../../app/AuthContext';
 import { useToast } from '../../app/ToastContext';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useInfiniteScroll } from '../../hooks/useInfiniteScroll';
@@ -13,8 +15,15 @@ import { usePaginatedTransactions } from '../../hooks/usePaginatedTransactions';
 import { useRouteState } from '../../hooks/useRouteState';
 import { deleteAccount, fetchAccountView } from '../../services/accountService';
 import { normalizeApiError } from '../../services/http';
-import { exportTransactionsToCsv } from '../../utils/csv';
 import { formatCurrency } from '../../utils/format';
+import {
+  buildTransactionReportDefinition,
+  exportReportDefinition,
+  fetchTransactionsForExport,
+  formatReportDateRange,
+  reportDateRangeFromInterval,
+  validateReportDateRange
+} from '../../utils/reportExport';
 import {
   createDefaultIntervalState,
   intervalDateRange,
@@ -23,12 +32,17 @@ import {
   intervalToQueryParams,
   shiftIntervalState
 } from '../../utils/intervals';
+import { isModuleEnabled } from '../../utils/modules';
+import { shouldShowUserAttribution } from '../../utils/userAttribution';
 
 export default function AccountViewPage() {
   const navigate = useNavigate();
   const { id } = useParams();
   const accountId = Number(id || 0);
+  const { settings } = useAuth();
   const { pushToast } = useToast();
+  const businessesEnabled = isModuleEnabled(settings, 'businesses');
+  const showUserAttribution = shouldShowUserAttribution(settings);
 
   const [interval, setInterval] = useRouteState(`account-${accountId}-interval`, () =>
     createDefaultIntervalState()
@@ -37,6 +51,7 @@ export default function AccountViewPage() {
   const [searchOpen, setSearchOpen] = useRouteState(`account-${accountId}-search-open`, false);
   const [searchTerm, setSearchTerm] = useRouteState(`account-${accountId}-search-term`, '');
   const [account, setAccount] = useState(null);
+  const [exportOpen, setExportOpen] = useState(false);
   const loadMoreRef = useRef(null);
 
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -95,12 +110,50 @@ export default function AccountViewPage() {
   useInfiniteScroll(loadMoreRef, loadMore, hasMore && !loading && !loadingMore);
 
   const filteredTransactions = transactions;
+  const defaultExportRange = useMemo(() => reportDateRangeFromInterval(interval), [interval]);
 
   const historyHref = useMemo(() => {
     const query = new URLSearchParams(intervalToQueryParams(interval));
     query.set('account_id', String(accountId));
     return `/transactions/history?${query.toString()}`;
   }, [accountId, interval]);
+  const onGenerateReport = useCallback(
+    async ({ format, fromDate, toDate }) => {
+      try {
+        const range = validateReportDateRange({ fromDate, toDate });
+        const reportTransactions = await fetchTransactionsForExport(
+          { account_id: accountId },
+          range,
+          normalizedSearch
+        );
+
+        const definition = buildTransactionReportDefinition({
+          title: `${account?.name || 'Account'} Report`,
+          subtitle: 'Account activity report',
+          fileName: `${account?.name || `account-${accountId}`}-report`,
+          dateRangeLabel: formatReportDateRange(range.fromDate, range.toDate),
+          transactions: reportTransactions,
+          includeBusiness: businessesEnabled,
+          includeCreatedBy: showUserAttribution,
+          meta: [
+            { label: 'Account', value: account?.name || '-' },
+            { label: 'Account Type', value: account?.type || '-' },
+            { label: 'Current Balance', value: formatCurrency(account?.current_balance || 0) },
+            { label: 'Opening Balance', value: formatCurrency(account?.opening_balance || 0) },
+            { label: 'View Interval', value: intervalLabel },
+            { label: 'Search', value: normalizedSearch || 'None' }
+          ],
+          sheetName: 'Account Transactions'
+        });
+
+        await exportReportDefinition(format, definition);
+        pushToast({ type: 'success', message: `${format.toUpperCase()} report generated.` });
+      } catch (error) {
+        pushToast({ type: 'danger', message: error?.message || normalizeApiError(error) });
+      }
+    },
+    [account?.current_balance, account?.name, account?.opening_balance, account?.type, accountId, businessesEnabled, intervalLabel, normalizedSearch, pushToast, showUserAttribution]
+  );
   const onSwipePrevInterval = useCallback(() => {
     setInterval((prev) => shiftIntervalState(prev, -1));
   }, []);
@@ -148,7 +201,7 @@ export default function AccountViewPage() {
       onToggleSearch={() => setSearchOpen((prev) => !prev)}
       onSearchChange={setSearchTerm}
       searchPlaceholder="Search transactions"
-      onExport={() => exportTransactionsToCsv(filteredTransactions)}
+      onExport={() => setExportOpen(true)}
       intervalSwipeEnabled={interval.mode !== 'all_time'}
       onIntervalSwipePrev={onSwipePrevInterval}
       onIntervalSwipeNext={onSwipeNextInterval}
@@ -284,6 +337,15 @@ export default function AccountViewPage() {
           <p className="text-sm text-slate-600 dark:text-slate-300">Account not found.</p>
         </section>
       )}
+
+      <ReportExportSheet
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title={`${account?.name || 'Account'} Report`}
+        subtitle="Generate a PDF, Excel, or CSV report for this account"
+        defaultRange={defaultExportRange}
+        onGenerate={onGenerateReport}
+      />
 
       <BottomSheet open={confirmDelete} onClose={closeDelete} title="Delete Account">
         <div className="space-y-3">

@@ -6,7 +6,8 @@ require_once dirname(__DIR__, 2) . '/bootstrap.php';
 
 Request::enforceMethod('GET');
 $user = AuthMiddleware::user();
-$userId = (int) $user['id'];
+$userId = AuthService::workspaceOwnerId($user);
+$allowedAccountIds = UserAccountAccessService::allowedAccountIds($user);
 $id = Validator::positiveInt(Request::query('id', 0), 'id');
 
 $budgetStmt = db()->prepare(
@@ -42,6 +43,13 @@ if (!$budget) {
 $monthStart = (string) $budget['month'] . '-01 00:00:00';
 $monthEnd = date('Y-m-t 23:59:59', strtotime($monthStart));
 
+$spentParams = [
+    ':spent_user_id' => $userId,
+    ':spent_category_id' => (int) $budget['category_id'],
+    ':spent_start' => $monthStart,
+    ':spent_end' => $monthEnd,
+];
+$spentScopeSql = UserAccountAccessService::buildTransactionScopeSql('t', $allowedAccountIds, $spentParams, 'budget_view_spent', false);
 $spentStmt = db()->prepare(
     'SELECT COALESCE(SUM(t.amount), 0) AS spent_amount
      FROM transactions t
@@ -49,16 +57,18 @@ $spentStmt = db()->prepare(
        AND t.is_deleted = 0
        AND t.type = \'expense\'
        AND t.category_id = :spent_category_id
-       AND t.transaction_date BETWEEN :spent_start AND :spent_end'
+       AND t.transaction_date BETWEEN :spent_start AND :spent_end' . $spentScopeSql
 );
-$spentStmt->execute([
-    ':spent_user_id' => $userId,
-    ':spent_category_id' => (int) $budget['category_id'],
-    ':spent_start' => $monthStart,
-    ':spent_end' => $monthEnd,
-]);
+$spentStmt->execute($spentParams);
 $spentAmount = (float) (($spentStmt->fetch()['spent_amount'] ?? 0));
 
+$linkedParams = [
+    ':tx_user_id' => $userId,
+    ':tx_category_id' => (int) $budget['category_id'],
+    ':tx_start' => $monthStart,
+    ':tx_end' => $monthEnd,
+];
+$linkedScopeSql = UserAccountAccessService::buildTransactionScopeSql('t', $allowedAccountIds, $linkedParams, 'budget_view_tx', false);
 $transactionsStmt = db()->prepare(
     'SELECT
         t.id,
@@ -89,15 +99,10 @@ $transactionsStmt = db()->prepare(
        AND t.is_deleted = 0
        AND t.type = \'expense\'
        AND t.category_id = :tx_category_id
-       AND t.transaction_date BETWEEN :tx_start AND :tx_end
+       AND t.transaction_date BETWEEN :tx_start AND :tx_end' . $linkedScopeSql . '
      ORDER BY t.transaction_date DESC, t.id DESC'
 );
-$transactionsStmt->execute([
-    ':tx_user_id' => $userId,
-    ':tx_category_id' => (int) $budget['category_id'],
-    ':tx_start' => $monthStart,
-    ':tx_end' => $monthEnd,
-]);
+$transactionsStmt->execute($linkedParams);
 $linkedTransactions = $transactionsStmt->fetchAll();
 
 $budgetAmount = (float) $budget['amount'];

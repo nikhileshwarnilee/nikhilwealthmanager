@@ -1,21 +1,25 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { getMe, login, logout, register } from '../services/authService';
+import { normalizeApiError } from '../services/http';
 import { clearAuthSession, getAuthSession, setAuthSession } from '../services/tokenStore';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [accessToken, setAccessToken] = useState(null);
   const [refreshToken, setRefreshToken] = useState(null);
 
-  const persist = useCallback((nextUser, nextAccess, nextRefresh) => {
+  const persist = useCallback((nextUser, nextSettings, nextAccess, nextRefresh) => {
     setUser(nextUser);
+    setSettings(nextSettings || null);
     setAccessToken(nextAccess);
     setRefreshToken(nextRefresh);
     setAuthSession({
       user: nextUser,
+      settings: nextSettings || null,
       accessToken: nextAccess,
       refreshToken: nextRefresh
     });
@@ -23,6 +27,7 @@ export function AuthProvider({ children }) {
 
   const clear = useCallback(() => {
     setUser(null);
+    setSettings(null);
     setAccessToken(null);
     setRefreshToken(null);
     clearAuthSession();
@@ -39,6 +44,17 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  const updateSettings = useCallback((nextSettings) => {
+    setSettings(nextSettings || null);
+    const session = getAuthSession();
+    if (session?.accessToken || session?.refreshToken) {
+      setAuthSession({
+        ...session,
+        settings: nextSettings || null
+      });
+    }
+  }, []);
+
   const hydrate = useCallback(async () => {
     const session = getAuthSession();
     if (!session?.accessToken || !session?.refreshToken) {
@@ -50,16 +66,19 @@ export function AuthProvider({ children }) {
     setAccessToken(session.accessToken);
     setRefreshToken(session.refreshToken);
     setUser(session.user || null);
+    setSettings(session.settings || null);
     setLoading(false);
 
     try {
       const data = await getMe();
       setAuthSession({
         user: data.user,
+        settings: data.settings || null,
         accessToken: session.accessToken,
         refreshToken: session.refreshToken
       });
       setUser(data.user);
+      setSettings(data.settings || null);
     } catch (error) {
       const status = error?.response?.status;
       if (status === 401 || status === 403) {
@@ -81,7 +100,7 @@ export function AuthProvider({ children }) {
   const loginUser = useCallback(
     async (payload) => {
       const data = await login(payload);
-      persist(data.user, data.access_token, data.refresh_token);
+      persist(data.user, data.settings || null, data.access_token, data.refresh_token);
       return data;
     },
     [persist]
@@ -90,7 +109,7 @@ export function AuthProvider({ children }) {
   const registerUser = useCallback(
     async (payload) => {
       const data = await register(payload);
-      persist(data.user, data.access_token, data.refresh_token);
+      persist(data.user, data.settings || null, data.access_token, data.refresh_token);
       return data;
     },
     [persist]
@@ -111,6 +130,7 @@ export function AuthProvider({ children }) {
   const value = useMemo(
     () => ({
       user,
+      settings,
       accessToken,
       refreshToken,
       loading,
@@ -118,9 +138,10 @@ export function AuthProvider({ children }) {
       login: loginUser,
       register: registerUser,
       logout: logoutUser,
-      setUser: updateUser
+      setUser: updateUser,
+      setSettings: updateSettings
     }),
-    [user, accessToken, refreshToken, loading, loginUser, registerUser, logoutUser, updateUser]
+    [user, settings, accessToken, refreshToken, loading, loginUser, registerUser, logoutUser, updateUser, updateSettings]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

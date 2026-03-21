@@ -16,7 +16,14 @@ final class AuthMiddleware
             Response::error('Invalid or expired access token.', 401);
         }
 
-        return AuthService::findUserById((int) $payload['uid']);
+        $user = AuthService::findUserById((int) $payload['uid']);
+        if (!(bool) ($user['is_active'] ?? true)) {
+            Response::error('This account is inactive. Contact your super admin.', 403);
+        }
+
+        PermissionService::authorizeRequest($user);
+
+        return $user;
     }
 }
 

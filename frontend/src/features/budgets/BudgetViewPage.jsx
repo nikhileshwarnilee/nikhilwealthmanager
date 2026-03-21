@@ -4,25 +4,40 @@ import AppShell from '../../components/AppShell';
 import BottomSheet from '../../components/BottomSheet';
 import EmptyState from '../../components/EmptyState';
 import Icon, { categoryIconKey } from '../../components/Icon';
+import ReportExportSheet from '../../components/ReportExportSheet';
 import TransactionItem from '../../components/TransactionItem';
+import { useAuth } from '../../app/AuthContext';
 import { useToast } from '../../app/ToastContext';
 import { useInfiniteScroll } from '../../hooks/useInfiniteScroll';
 import { usePaginatedTransactions } from '../../hooks/usePaginatedTransactions';
 import { deleteBudget, fetchBudgetView } from '../../services/budgetService';
 import { normalizeApiError } from '../../services/http';
-import { exportTransactionsToCsv } from '../../utils/csv';
 import { formatCurrency, monthDateRange } from '../../utils/format';
+import {
+  buildTransactionReportDefinition,
+  exportReportDefinition,
+  fetchTransactionsForExport,
+  formatReportDateRange,
+  reportDateRangeFromMonth,
+  validateReportDateRange
+} from '../../utils/reportExport';
+import { isModuleEnabled } from '../../utils/modules';
+import { shouldShowUserAttribution } from '../../utils/userAttribution';
 
 export default function BudgetViewPage() {
   const navigate = useNavigate();
   const { id } = useParams();
   const budgetId = Number(id || 0);
+  const { settings } = useAuth();
   const { pushToast } = useToast();
+  const businessesEnabled = isModuleEnabled(settings, 'businesses');
+  const showUserAttribution = shouldShowUserAttribution(settings);
 
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [budget, setBudget] = useState(null);
+  const [exportOpen, setExportOpen] = useState(false);
   const loadMoreRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -89,12 +104,70 @@ export default function BudgetViewPage() {
   };
 
   const utilization = useMemo(() => Number(budget?.utilization_percentage || 0), [budget]);
+  const defaultExportRange = useMemo(() => reportDateRangeFromMonth(budget?.month), [budget?.month]);
   const barColor =
     utilization > 100 ? 'bg-danger' : utilization >= 80 ? 'bg-warning' : utilization >= 50 ? 'bg-primary' : 'bg-success';
   const iconName = useMemo(() => {
     if (!budget?.category) return 'budgets';
     return categoryIconKey(budget.category);
   }, [budget]);
+  const onGenerateReport = useCallback(
+    async ({ format, fromDate, toDate }) => {
+      try {
+        const range = validateReportDateRange({ fromDate, toDate });
+        const reportTransactions = await fetchTransactionsForExport(
+          {
+            category_id: budget?.category?.id,
+            type: 'expense'
+          },
+          range
+        );
+
+        const definition = buildTransactionReportDefinition({
+          title: `${budget?.category?.name || 'Budget'} Report`,
+          subtitle: `Budget detail report${budget?.month ? ` for ${budget.month}` : ''}`,
+          fileName: `${budget?.category?.name || `budget-${budgetId}`}-report`,
+          dateRangeLabel: formatReportDateRange(range.fromDate, range.toDate),
+          transactions: reportTransactions,
+          includeBusiness: businessesEnabled,
+          includeCreatedBy: showUserAttribution,
+          meta: [
+            { label: 'Budget Month', value: budget?.month || '-' },
+            { label: 'Category', value: budget?.category?.name || '-' },
+            { label: 'Budget Amount', value: formatCurrency(budget?.budget_amount || 0) },
+            { label: 'Spent In Budget', value: formatCurrency(budget?.spent_amount || 0) },
+            { label: 'Remaining', value: formatCurrency(budget?.remaining_amount || 0) },
+            { label: 'Utilization', value: `${Number(budget?.utilization_percentage || 0)}%` }
+          ],
+          summary: [
+            { label: 'Budget', value: formatCurrency(budget?.budget_amount || 0) },
+            { label: 'Spent', value: formatCurrency(budget?.spent_amount || 0) },
+            { label: 'Remaining', value: formatCurrency(budget?.remaining_amount || 0) },
+            { label: 'Transactions', value: String(reportTransactions.length) }
+          ],
+          sheetName: 'Budget Transactions'
+        });
+
+        await exportReportDefinition(format, definition);
+        pushToast({ type: 'success', message: `${format.toUpperCase()} report generated.` });
+      } catch (error) {
+        pushToast({ type: 'danger', message: error?.message || normalizeApiError(error) });
+      }
+    },
+    [
+      budget?.budget_amount,
+      budget?.category?.id,
+      budget?.category?.name,
+      budget?.month,
+      budget?.remaining_amount,
+      budget?.spent_amount,
+      budget?.utilization_percentage,
+      budgetId,
+      businessesEnabled,
+      pushToast,
+      showUserAttribution
+    ]
+  );
 
   return (
     <AppShell
@@ -104,7 +177,7 @@ export default function BudgetViewPage() {
         await Promise.all([load(), reloadTransactions()]);
       }}
       showFab={false}
-      onExport={() => exportTransactionsToCsv(transactions || [])}
+      onExport={() => setExportOpen(true)}
       contentClassName="gap-2"
     >
       {loading ? (
@@ -216,6 +289,15 @@ export default function BudgetViewPage() {
           <p className="text-sm text-slate-600 dark:text-slate-300">Budget not found.</p>
         </section>
       )}
+
+      <ReportExportSheet
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title={`${budget?.category?.name || 'Budget'} Report`}
+        subtitle="Generate a PDF, Excel, or CSV report for this budget"
+        defaultRange={defaultExportRange}
+        onGenerate={onGenerateReport}
+      />
 
       <BottomSheet open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete Budget">
         <div className="space-y-3">

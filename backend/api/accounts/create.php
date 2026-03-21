@@ -7,6 +7,7 @@ require_once dirname(__DIR__, 2) . '/bootstrap.php';
 RateLimitMiddleware::enforce('accounts_create', 120, 600);
 Request::enforceMethod('POST');
 $user = AuthMiddleware::user();
+$userId = AuthService::workspaceOwnerId($user);
 
 $input = Request::body();
 $name = Validator::string($input['name'] ?? '', 120);
@@ -30,7 +31,7 @@ $stmt = db()->prepare(
      VALUES (:user_id, :name, :type, :initial_balance, :current_balance, :currency)'
 );
 $stmt->execute([
-    ':user_id' => (int) $user['id'],
+    ':user_id' => $userId,
     ':name' => $name,
     ':type' => $type,
     ':initial_balance' => $initialBalance,
@@ -47,7 +48,7 @@ $fetch = db()->prepare(
        AND is_deleted = 0
      LIMIT 1'
 );
-$fetch->execute([':id' => $id, ':user_id' => (int) $user['id']]);
+$fetch->execute([':id' => $id, ':user_id' => $userId]);
 
 Response::success('Account created.', [
     'account' => $fetch->fetch(),

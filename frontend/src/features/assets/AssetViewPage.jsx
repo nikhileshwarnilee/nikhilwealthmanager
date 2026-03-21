@@ -6,7 +6,9 @@ import BottomSheet from '../../components/BottomSheet';
 import CollapsibleIntervalSection from '../../components/CollapsibleIntervalSection';
 import EmptyState from '../../components/EmptyState';
 import Icon, { ICON_NAMES, assetIconKey } from '../../components/Icon';
+import ReportExportSheet from '../../components/ReportExportSheet';
 import TransactionItem from '../../components/TransactionItem';
+import { useAuth } from '../../app/AuthContext';
 import { useToast } from '../../app/ToastContext';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useInfiniteScroll } from '../../hooks/useInfiniteScroll';
@@ -21,12 +23,22 @@ import {
 import { normalizeApiError } from '../../services/http';
 import { datetimeLocalNow, formatCurrency } from '../../utils/format';
 import {
+  buildReportDefinition,
+  buildTransactionReportDefinition,
+  exportReportDefinition,
+  fetchTransactionsForExport,
+  formatReportDateRange,
+  reportDateRangeFromInterval,
+  validateReportDateRange
+} from '../../utils/reportExport';
+import {
   createDefaultIntervalState,
   intervalDateRange,
   intervalDisplayLabel,
   intervalSummaryParams,
   shiftIntervalState
 } from '../../utils/intervals';
+import { shouldShowUserAttribution } from '../../utils/userAttribution';
 
 function parseDeleteDetails(error) {
   return error?.response?.data?.data?.errors || null;
@@ -43,7 +55,9 @@ export default function AssetViewPage() {
   const navigate = useNavigate();
   const { id } = useParams();
   const assetId = Number(id || 0);
+  const { settings } = useAuth();
   const { pushToast } = useToast();
+  const showUserAttribution = shouldShowUserAttribution(settings);
 
   const [loadingAsset, setLoadingAsset] = useState(true);
   const [assetLoadError, setAssetLoadError] = useState('');
@@ -53,6 +67,7 @@ export default function AssetViewPage() {
   const [searchTerm, setSearchTerm] = useRouteState(`asset-${assetId}-search-term`, '');
   const [showValueSheet, setShowValueSheet] = useState(false);
   const [valueSaving, setValueSaving] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [valueForm, setValueForm] = useState({
     current_value: '',
     recorded_at: datetimeLocalNow(),
@@ -157,6 +172,7 @@ export default function AssetViewPage() {
   useInfiniteScroll(loadMoreRef, loadMore, hasMore && !loading && !loadingMore);
 
   const filteredTransactions = transactions;
+  const defaultExportRange = useMemo(() => reportDateRangeFromInterval(interval), [interval]);
 
   const asset = assetData?.asset || null;
   const investmentHistory = assetData?.investment_history || [];
@@ -256,6 +272,92 @@ export default function AssetViewPage() {
   const onSwipeNextInterval = useCallback(() => {
     setInterval((prev) => shiftIntervalState(prev, 1));
   }, []);
+  const onGenerateReport = useCallback(
+    async ({ format, fromDate, toDate }) => {
+      try {
+        const range = validateReportDateRange({ fromDate, toDate });
+        const [assetReport, reportTransactions] = await Promise.all([
+          fetchAssetView(assetId, {
+            date_from: range.fromDate,
+            date_to: range.toDate
+          }),
+          fetchTransactionsForExport(
+            {
+              type: 'asset',
+              asset_type_id: assetId
+            },
+            range,
+            normalizedSearch
+          )
+        ]);
+
+        const transactionDefinition = buildTransactionReportDefinition({
+          title: `${assetReport?.asset?.name || asset?.name || 'Asset'} Report`,
+          subtitle: 'Asset transactions',
+          fileName: `${assetReport?.asset?.name || asset?.name || 'asset'}-report`,
+          dateRangeLabel: formatReportDateRange(range.fromDate, range.toDate),
+          transactions: reportTransactions,
+          includeBusiness: false,
+          includeCreatedBy: showUserAttribution,
+          meta: [],
+          sheetName: 'Asset Transactions'
+        });
+
+        const definition = buildReportDefinition({
+          title: `${assetReport?.asset?.name || asset?.name || 'Asset'} Report`,
+          subtitle: 'Asset detail, value history, and transaction report',
+          fileName: `${assetReport?.asset?.name || asset?.name || 'asset'}-report`,
+          dateRangeLabel: formatReportDateRange(range.fromDate, range.toDate),
+          meta: [
+            { label: 'Asset', value: assetReport?.asset?.name || asset?.name || '-' },
+            { label: 'View Interval', value: intervalLabel },
+            { label: 'Search', value: normalizedSearch || 'None' }
+          ],
+          summary: [
+            { label: 'Invested', value: formatCurrency(assetReport?.asset?.invested_amount || 0) },
+            { label: 'Current Value', value: formatCurrency(assetReport?.asset?.current_value || 0) },
+            { label: 'Gain / Loss', value: formatCurrency(assetReport?.asset?.gain_loss || 0) },
+            { label: 'Gain %', value: `${Number(assetReport?.asset?.gain_loss_percent || 0).toFixed(2)}%` }
+          ],
+          tables: [
+            {
+              name: 'Investment History',
+              columns: [
+                { key: 'label', label: 'Date' },
+                { key: 'invested_in', label: 'Invested In' },
+                { key: 'redeemed_out', label: 'Redeemed Out' },
+                { key: 'net_invested', label: 'Net Invested' }
+              ],
+              rows: (assetReport?.investment_history || []).map((row) => ({
+                label: row.label || '-',
+                invested_in: formatCurrency(row.invested_in || 0),
+                redeemed_out: formatCurrency(row.redeemed_out || 0),
+                net_invested: formatCurrency(row.net_invested || 0)
+              }))
+            },
+            {
+              name: 'Value History',
+              columns: [
+                { key: 'label', label: 'Date' },
+                { key: 'value', label: 'Reported Value' }
+              ],
+              rows: (assetReport?.value_series || []).map((row) => ({
+                label: row.label || '-',
+                value: formatCurrency(row.value || 0)
+              }))
+            },
+            ...transactionDefinition.tables
+          ]
+        });
+
+        await exportReportDefinition(format, definition);
+        pushToast({ type: 'success', message: `${format.toUpperCase()} report generated.` });
+      } catch (error) {
+        pushToast({ type: 'danger', message: error?.message || normalizeApiError(error) });
+      }
+    },
+    [asset?.name, assetId, intervalLabel, normalizedSearch, pushToast, showUserAttribution]
+  );
 
   return (
     <AppShell
@@ -271,6 +373,7 @@ export default function AssetViewPage() {
       onToggleSearch={() => setSearchOpen((prev) => !prev)}
       onSearchChange={setSearchTerm}
       searchPlaceholder="Search asset transactions"
+      onExport={() => setExportOpen(true)}
       intervalSwipeEnabled={interval.mode !== 'all_time'}
       onIntervalSwipePrev={onSwipePrevInterval}
       onIntervalSwipeNext={onSwipeNextInterval}
@@ -580,6 +683,15 @@ export default function AssetViewPage() {
           </div>
         </div>
       </BottomSheet>
+
+      <ReportExportSheet
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title={`${asset?.name || 'Asset'} Report`}
+        subtitle="Generate a PDF, Excel, or CSV report for this asset"
+        defaultRange={defaultExportRange}
+        onGenerate={onGenerateReport}
+      />
     </AppShell>
   );
 }

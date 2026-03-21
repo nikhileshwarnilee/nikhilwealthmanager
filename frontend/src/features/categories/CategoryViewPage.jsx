@@ -5,7 +5,9 @@ import BottomSheet from '../../components/BottomSheet';
 import CollapsibleIntervalSection from '../../components/CollapsibleIntervalSection';
 import EmptyState from '../../components/EmptyState';
 import Icon, { categoryIconKey } from '../../components/Icon';
+import ReportExportSheet from '../../components/ReportExportSheet';
 import TransactionItem from '../../components/TransactionItem';
+import { useAuth } from '../../app/AuthContext';
 import { useToast } from '../../app/ToastContext';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useInfiniteScroll } from '../../hooks/useInfiniteScroll';
@@ -13,8 +15,15 @@ import { usePaginatedTransactions } from '../../hooks/usePaginatedTransactions';
 import { useRouteState } from '../../hooks/useRouteState';
 import { deleteCategory, fetchCategoryView } from '../../services/categoryService';
 import { normalizeApiError } from '../../services/http';
-import { exportTransactionsToCsv } from '../../utils/csv';
 import { formatCurrency } from '../../utils/format';
+import {
+  buildTransactionReportDefinition,
+  exportReportDefinition,
+  fetchTransactionsForExport,
+  formatReportDateRange,
+  reportDateRangeFromInterval,
+  validateReportDateRange
+} from '../../utils/reportExport';
 import {
   createDefaultIntervalState,
   intervalDateRange,
@@ -22,6 +31,8 @@ import {
   intervalSummaryParams,
   shiftIntervalState
 } from '../../utils/intervals';
+import { isModuleEnabled } from '../../utils/modules';
+import { shouldShowUserAttribution } from '../../utils/userAttribution';
 
 function parseDeleteDetails(error) {
   return error?.response?.data?.data?.errors || null;
@@ -31,7 +42,10 @@ export default function CategoryViewPage() {
   const navigate = useNavigate();
   const { id } = useParams();
   const categoryId = Number(id || 0);
+  const { settings } = useAuth();
   const { pushToast } = useToast();
+  const businessesEnabled = isModuleEnabled(settings, 'businesses');
+  const showUserAttribution = shouldShowUserAttribution(settings);
 
   const [interval, setInterval] = useRouteState(`category-${categoryId}-interval`, () =>
     createDefaultIntervalState()
@@ -40,6 +54,7 @@ export default function CategoryViewPage() {
   const [searchOpen, setSearchOpen] = useRouteState(`category-${categoryId}-search-open`, false);
   const [searchTerm, setSearchTerm] = useRouteState(`category-${categoryId}-search-term`, '');
   const [category, setCategory] = useState(null);
+  const [exportOpen, setExportOpen] = useState(false);
   const loadMoreRef = useRef(null);
 
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -103,6 +118,7 @@ export default function CategoryViewPage() {
   useInfiniteScroll(loadMoreRef, loadMore, hasMore && !loading && !loadingMore);
 
   const filteredTransactions = transactions;
+  const defaultExportRange = useMemo(() => reportDateRangeFromInterval(interval), [interval]);
 
   const closeDelete = () => {
     setConfirmDelete(false);
@@ -146,6 +162,45 @@ export default function CategoryViewPage() {
   const onSwipeNextInterval = useCallback(() => {
     setInterval((prev) => shiftIntervalState(prev, 1));
   }, []);
+  const onGenerateReport = useCallback(
+    async ({ format, fromDate, toDate }) => {
+      try {
+        const range = validateReportDateRange({ fromDate, toDate });
+        const reportTransactions = await fetchTransactionsForExport(
+          { category_id: categoryId },
+          range,
+          normalizedSearch
+        );
+
+        const definition = buildTransactionReportDefinition({
+          title: `${category?.name || 'Category'} Report`,
+          subtitle: 'Category activity report',
+          fileName: `${category?.name || `category-${categoryId}`}-report`,
+          dateRangeLabel: formatReportDateRange(range.fromDate, range.toDate),
+          transactions: reportTransactions,
+          includeBusiness: businessesEnabled,
+          includeCreatedBy: showUserAttribution,
+          meta: [
+            { label: 'Category', value: category?.name || '-' },
+            { label: 'Type', value: category?.type || '-' },
+            {
+              label: 'Linked Budget',
+              value: category?.linked_budget ? formatCurrency(category.linked_budget.amount) : 'None'
+            },
+            { label: 'View Interval', value: intervalLabel },
+            { label: 'Search', value: normalizedSearch || 'None' }
+          ],
+          sheetName: 'Category Transactions'
+        });
+
+        await exportReportDefinition(format, definition);
+        pushToast({ type: 'success', message: `${format.toUpperCase()} report generated.` });
+      } catch (error) {
+        pushToast({ type: 'danger', message: error?.message || normalizeApiError(error) });
+      }
+    },
+    [businessesEnabled, category?.linked_budget, category?.name, category?.type, categoryId, intervalLabel, normalizedSearch, pushToast, showUserAttribution]
+  );
 
   return (
     <AppShell
@@ -161,7 +216,7 @@ export default function CategoryViewPage() {
       onToggleSearch={() => setSearchOpen((prev) => !prev)}
       onSearchChange={setSearchTerm}
       searchPlaceholder="Search transactions"
-      onExport={() => exportTransactionsToCsv(filteredTransactions)}
+      onExport={() => setExportOpen(true)}
       intervalSwipeEnabled={interval.mode !== 'all_time'}
       onIntervalSwipePrev={onSwipePrevInterval}
       onIntervalSwipeNext={onSwipeNextInterval}
@@ -291,6 +346,15 @@ export default function CategoryViewPage() {
           <p className="text-sm text-slate-600 dark:text-slate-300">Category not found.</p>
         </section>
       )}
+
+      <ReportExportSheet
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title={`${category?.name || 'Category'} Report`}
+        subtitle="Generate a PDF, Excel, or CSV report for this category"
+        defaultRange={defaultExportRange}
+        onGenerate={onGenerateReport}
+      />
 
       <BottomSheet open={confirmDelete} onClose={closeDelete} title="Delete Category">
         <div className="space-y-3">

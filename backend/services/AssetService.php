@@ -6,6 +6,8 @@ final class AssetService
 {
     public static function listTypes(int $userId): array
     {
+        self::assertModuleEnabled($userId);
+
         $stmt = db()->prepare(
              'SELECT
                 a.id,
@@ -72,6 +74,8 @@ final class AssetService
 
     public static function summary(int $userId): array
     {
+        self::assertModuleEnabled($userId);
+
         $assets = self::listTypes($userId);
         $totalInvested = 0.0;
         $totalCurrent = 0.0;
@@ -105,6 +109,8 @@ final class AssetService
 
     public static function createType(int $userId, array $input): array
     {
+        self::assertModuleEnabled($userId);
+
         $name = Validator::string($input['name'] ?? '', 120);
         $icon = Validator::string($input['icon'] ?? '', 255);
         $color = self::sanitizeColor($input['color'] ?? '');
@@ -170,6 +176,8 @@ final class AssetService
 
     public static function updateType(int $userId, int $id, array $input): array
     {
+        self::assertModuleEnabled($userId);
+
         $name = Validator::string($input['name'] ?? '', 120);
         $icon = Validator::string($input['icon'] ?? '', 255);
         $color = self::sanitizeColor($input['color'] ?? '');
@@ -212,6 +220,8 @@ final class AssetService
 
     public static function deleteType(int $userId, int $id, ?int $replacementAssetTypeId = null): array
     {
+        self::assertModuleEnabled($userId);
+
         $asset = self::assertAssetType($id, $userId);
 
         $txCountStmt = db()->prepare(
@@ -346,6 +356,8 @@ final class AssetService
 
     public static function getType(int $id, int $userId): array
     {
+        self::assertModuleEnabled($userId);
+
         $stmt = db()->prepare(
             'SELECT
                 id,
@@ -429,6 +441,8 @@ final class AssetService
         ?string $dateTo = null,
         int $limit = 365
     ): array {
+        self::assertModuleEnabled($userId);
+
         self::assertAssetType($assetTypeId, $userId);
 
         $sql = 'SELECT id, asset_type_id, value, note, source, recorded_at, created_at
@@ -481,6 +495,8 @@ final class AssetService
         ?string $recordedAt = null,
         string $note = ''
     ): array {
+        self::assertModuleEnabled($userId);
+
         $value = round($newValue, 2);
         if ($value < 0) {
             Response::error('Current value cannot be negative.', 422);
@@ -695,5 +711,12 @@ final class AssetService
         }
 
         return strtoupper($color);
+    }
+
+    private static function assertModuleEnabled(int $userId, ?PDO $pdo = null): void
+    {
+        if (!UserSettingsService::isModuleEnabled($userId, 'assets', $pdo)) {
+            Response::error('Assets / Wealth module is disabled.', 403);
+        }
     }
 }

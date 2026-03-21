@@ -10,6 +10,8 @@ if (!in_array(Request::method(), ['PUT', 'PATCH', 'POST'], true)) {
 }
 
 $user = AuthMiddleware::user();
+$userId = AuthService::workspaceOwnerId($user);
+$allowedAccountIds = UserAccountAccessService::allowedAccountIds($user);
 $input = Request::body();
 
 $id = Validator::positiveInt($input['id'] ?? 0, 'id');
@@ -24,6 +26,9 @@ if ($name === '') {
 if (array_key_exists('initial_balance', $input)) {
     Response::error('Opening balance cannot be edited directly. Use adjust opening balance action.', 422);
 }
+if ($allowedAccountIds !== []) {
+    UserAccountAccessService::assertAllowedAccount($id, $allowedAccountIds);
+}
 
 $existingStmt = db()->prepare(
     'SELECT id, currency
@@ -33,7 +38,7 @@ $existingStmt = db()->prepare(
        AND is_deleted = 0
      LIMIT 1'
 );
-$existingStmt->execute([':id' => $id, ':user_id' => (int) $user['id']]);
+$existingStmt->execute([':id' => $id, ':user_id' => $userId]);
 $existing = $existingStmt->fetch();
 if (!$existing) {
     Response::error('Account not found.', 404);
@@ -56,7 +61,7 @@ $stmt->execute([
     ':currency' => $currency,
     ':is_archived' => $isArchived,
     ':id' => $id,
-    ':user_id' => (int) $user['id'],
+    ':user_id' => $userId,
 ]);
 
 $fetch = db()->prepare(
@@ -67,7 +72,7 @@ $fetch = db()->prepare(
        AND is_deleted = 0
      LIMIT 1'
 );
-$fetch->execute([':id' => $id, ':user_id' => (int) $user['id']]);
+$fetch->execute([':id' => $id, ':user_id' => $userId]);
 
 Response::success('Account updated.', [
     'account' => $fetch->fetch(),

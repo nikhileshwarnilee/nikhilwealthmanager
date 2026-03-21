@@ -1,0 +1,23 @@
+
+> expense-manager-pwa@2.0.0 dev
+> vite --host 0.0.0.0
+
+[2m10:52:39 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m Re-optimizing dependencies because lockfile has changed
+
+  [32m[1mVITE[22m v7.3.1[39m  [2mready in [0m[1m2072[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5173[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://10.179.249.208:[1m5173[22m/[39m
+[2m11:04:32 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/features/ledger/LedgerPage.jsx[22m
+[2m11:16:18 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/features/ledger/LedgerPage.jsx, /src/features/transactions/TransactionsPage.jsx[22m
+[2m11:43:06 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/App.jsx, /src/features/dashboard/DashboardPage.jsx, /src/components/TransactionItem.jsx, /src/components/BottomTabs.jsx, /src/features/transactions/TransactionsPage.jsx, /src/features/settings/SettingsPage.jsx, /src/features/settings/ModulesPage.jsx, /src/features/accounts/AccountViewPage.jsx, /src/index.css[22m
+[2m11:43:43 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/App.jsx, /src/index.css[22m
+[2m11:44:07 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/BottomTabs.jsx[22m
+[2m11:45:19 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/FabAddButton.jsx[22m
+[2m11:45:42 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/features/settings/SettingsPage.jsx[22m
+[2m11:45:58 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/settings/ModulesPage.jsx, /src/index.css[22m
+[2m11:47:11 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/dashboard/DashboardPage.jsx, /src/index.css[22m
+[2m11:47:20 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/auth/LoginPage.jsx, /src/index.css[22m
+[2m11:47:38 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m11:47:57 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/settings/ModulesPage.jsx, /src/index.css[22m
+[2m11:50:58 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/dashboard/DashboardPage.jsx, /src/index.css[22m

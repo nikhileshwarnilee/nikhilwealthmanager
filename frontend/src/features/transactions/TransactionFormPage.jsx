@@ -1,16 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import AppShell from '../../components/AppShell';
+import BusinessStripSelector from '../../components/BusinessStripSelector';
 import HorizontalSelector from '../../components/HorizontalSelector';
 import Icon, { assetIconKey, categoryIconKey } from '../../components/Icon';
+import { useAuth } from '../../app/AuthContext';
 import { useToast } from '../../app/ToastContext';
 import { API_BASE_URL, normalizeApiError } from '../../services/http';
 import { fetchAccounts } from '../../services/accountService';
 import { fetchAssets } from '../../services/assetService';
+import { fetchBusinesses } from '../../services/businessService';
 import { fetchCategories } from '../../services/categoryService';
+import { fetchLedgerEntry } from '../../services/ledgerService';
 import { createTransaction, fetchTransactions, updateTransaction, uploadTransactionReceipt } from '../../services/transactionService';
 import { datetimeLocalNow, formatCurrency } from '../../utils/format';
 import { hapticTap } from '../../utils/haptics';
+import { isModuleEnabled } from '../../utils/modules';
+import { canEditTransaction } from '../../utils/permissions';
 
 const initialForm = {
   amount: '',
@@ -19,6 +25,7 @@ const initialForm = {
   from_asset_type_id: '',
   to_asset_type_id: '',
   category_id: '',
+  business_id: '',
   note: '',
   location: '',
   receipt_path: '',
@@ -80,11 +87,25 @@ function buildReceiptUrl(path) {
   return `${base}/backend/${String(path).replace(/^\/+/, '')}`;
 }
 
+function buildLedgerNote(entry) {
+  const contactName = String(entry?.contact_name || '').trim();
+  const note = String(entry?.note || '').trim();
+  if (!contactName) return note;
+  if (!note) return contactName;
+  return `${contactName} - ${note}`;
+}
+
 export default function TransactionFormPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const editing = Boolean(id);
+  const { user, settings } = useAuth();
   const { pushToast } = useToast();
+  const businessesEnabled = isModuleEnabled(settings, 'businesses');
+  const ledgerEnabled = isModuleEnabled(settings, 'ledger');
+  const assetsEnabled = isModuleEnabled(settings, 'assets');
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -95,24 +116,47 @@ export default function TransactionFormPage() {
   const [accounts, setAccounts] = useState([]);
   const [assetTypes, setAssetTypes] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [businesses, setBusinesses] = useState([]);
   const [form, setForm] = useState(initialForm);
+  const [ledgerEntry, setLedgerEntry] = useState(null);
   const fileInputRef = useRef(null);
+  const ledgerEntryId = !editing && ledgerEnabled
+    ? Number(searchParams.get('ledger_entry_id') || location.state?.ledgerEntry?.id || 0)
+    : 0;
+  const ledgerConversionActive = !editing && Boolean(ledgerEntry?.id);
 
   useEffect(() => {
     const run = async () => {
       setLoading(true);
       try {
-        const [accRes, catRes, assetRes] = await Promise.all([fetchAccounts(), fetchCategories(), fetchAssets()]);
+        const [accRes, catRes, assetRes, businessRes] = await Promise.all([
+          fetchAccounts(),
+          fetchCategories(),
+          assetsEnabled ? fetchAssets() : Promise.resolve({ assets: [] }),
+          businessesEnabled ? fetchBusinesses() : Promise.resolve({ businesses: [] })
+        ]);
         setAccounts(accRes.accounts || []);
         setCategories(catRes.categories || []);
         setAssetTypes(assetRes.assets || []);
+        setBusinesses(businessRes.businesses || []);
 
         if (editing) {
+          setLedgerEntry(null);
           const txRes = await fetchTransactions({ id, page: 1, limit: 1 });
           const tx = txRes.transactions?.[0];
           if (!tx) throw new Error('Transaction not found.');
+          if (!canEditTransaction(user, tx)) {
+            pushToast({ type: 'warning', message: 'You do not have permission to edit this transaction.' });
+            navigate(`/transactions/${id}`, { replace: true });
+            return;
+          }
           const isPeopleTransfer = tx.type === 'transfer' && isPeopleReferenceType(tx.reference_type);
           const isAssetMovement = tx.type === 'asset';
+          if (isAssetMovement && !assetsEnabled) {
+            pushToast({ type: 'warning', message: 'Assets / Wealth module is turned off for this account.' });
+            navigate('/transactions', { replace: true });
+            return;
+          }
           const inferredMode = isPeopleTransfer ? 'people' : isAssetMovement ? 'asset' : tx.type;
           setMode(inferredMode);
           if (isPeopleTransfer) {
@@ -133,6 +177,7 @@ export default function TransactionFormPage() {
             from_asset_type_id: tx.from_asset_type_id ? String(tx.from_asset_type_id) : '',
             to_asset_type_id: tx.to_asset_type_id ? String(tx.to_asset_type_id) : '',
             category_id: tx.category_id ? String(tx.category_id) : '',
+            business_id: businessesEnabled && tx.business_id ? String(tx.business_id) : '',
             note: tx.note || '',
             location: tx.location || '',
             receipt_path: tx.receipt_path || '',
@@ -141,6 +186,34 @@ export default function TransactionFormPage() {
               ? tx.transaction_date.replace(' ', 'T').slice(0, 16)
               : datetimeLocalNow()
           });
+        } else if (ledgerEntryId > 0) {
+          const entry =
+            Number(location.state?.ledgerEntry?.id || 0) === ledgerEntryId
+              ? location.state.ledgerEntry
+              : (await fetchLedgerEntry(ledgerEntryId)).entry;
+          const conversionMode = entry.direction === 'payable' ? 'expense' : 'income';
+          const receiptPath = entry.attachment_path || '';
+          setLedgerEntry(entry);
+          setMode(conversionMode);
+          setForm((prev) => ({
+            ...prev,
+            amount: String(entry.amount || ''),
+            category_id: '',
+            from_account_id: '',
+            to_account_id: '',
+            from_asset_type_id: '',
+            to_asset_type_id: '',
+            business_id: '',
+            note: buildLedgerNote(entry),
+            location: '',
+            receipt_path: receiptPath,
+            receipt_url: receiptPath ? buildReceiptUrl(receiptPath) : '',
+            transaction_date: datetimeLocalNow()
+          }));
+        } else {
+          setLedgerEntry(null);
+          setMode('expense');
+          setForm(initialForm);
         }
       } catch (error) {
         pushToast({ type: 'danger', message: normalizeApiError(error) });
@@ -149,7 +222,34 @@ export default function TransactionFormPage() {
       }
     };
     run();
-  }, [editing, id, pushToast]);
+  }, [assetsEnabled, businessesEnabled, editing, id, ledgerEntryId, location.state, navigate, pushToast, user]);
+
+  useEffect(() => {
+    if (!businessesEnabled) {
+      setBusinesses([]);
+      setForm((prev) => (prev.business_id ? { ...prev, business_id: '' } : prev));
+    }
+  }, [businessesEnabled]);
+
+  useEffect(() => {
+    if (!assetsEnabled) {
+      setAssetTypes([]);
+      setForm((prev) =>
+        prev.from_asset_type_id || prev.to_asset_type_id
+          ? { ...prev, from_asset_type_id: '', to_asset_type_id: '' }
+          : prev
+      );
+      if (mode === 'asset') {
+        setMode('expense');
+      }
+    }
+  }, [assetsEnabled, mode]);
+
+  useEffect(() => {
+    if (!ledgerEnabled && ledgerEntry) {
+      setLedgerEntry(null);
+    }
+  }, [ledgerEnabled, ledgerEntry]);
 
   const visibleCategories = useMemo(() => {
     if (mode === 'transfer' || mode === 'people' || mode === 'asset') return [];
@@ -187,6 +287,15 @@ export default function TransactionFormPage() {
     () => accountSelectorData.filter((item) => item.type === 'people'),
     [accountSelectorData]
   );
+
+  const defaultRegularAccountId = useMemo(() => {
+    const preferredId = String(user?.default_account_id || '');
+    if (preferredId && regularAccountOptions.some((item) => item.value === preferredId)) {
+      return preferredId;
+    }
+
+    return regularAccountOptions[0]?.value || '';
+  }, [regularAccountOptions, user?.default_account_id]);
 
   const peopleFlowIsRegularToPeople = useMemo(
     () => regularToPeopleActions.has(peopleAction),
@@ -237,7 +346,65 @@ export default function TransactionFormPage() {
     return 'To account';
   }, [assetFlowIsAccountToAsset, mode, peopleAction]);
 
+  useEffect(() => {
+    if (loading || editing || !defaultRegularAccountId) {
+      return;
+    }
+
+    setForm((prev) => {
+      const next = { ...prev };
+
+      if (mode === 'income' && !next.to_account_id) {
+        next.to_account_id = defaultRegularAccountId;
+      }
+
+      if (mode === 'expense' && !next.from_account_id) {
+        next.from_account_id = defaultRegularAccountId;
+      }
+
+      if (mode === 'transfer' && !next.from_account_id) {
+        next.from_account_id = defaultRegularAccountId;
+      }
+
+      if (mode === 'people') {
+        if (peopleFlowIsRegularToPeople && !next.from_account_id) {
+          next.from_account_id = defaultRegularAccountId;
+        }
+        if (!peopleFlowIsRegularToPeople && !next.to_account_id) {
+          next.to_account_id = defaultRegularAccountId;
+        }
+      }
+
+      if (mode === 'asset') {
+        if (assetAction === 'invest' && !next.from_account_id) {
+          next.from_account_id = defaultRegularAccountId;
+        }
+        if (assetAction === 'redeem' && !next.to_account_id) {
+          next.to_account_id = defaultRegularAccountId;
+        }
+      }
+
+      if (
+        next.from_account_id === prev.from_account_id
+        && next.to_account_id === prev.to_account_id
+      ) {
+        return prev;
+      }
+
+      return next;
+    });
+  }, [
+    assetAction,
+    defaultRegularAccountId,
+    editing,
+    loading,
+    mode,
+    peopleFlowIsRegularToPeople
+  ]);
+
   const onTypeSelect = (nextMode) => {
+    if (ledgerConversionActive) return;
+    if (nextMode === 'asset' && !assetsEnabled) return;
     hapticTap();
     setMode(nextMode);
     if (nextMode === 'people' && mode !== 'people') {
@@ -249,6 +416,7 @@ export default function TransactionFormPage() {
     setForm((prev) => ({
       ...prev,
       category_id: nextMode === 'transfer' || nextMode === 'people' || nextMode === 'asset' ? '' : prev.category_id,
+      business_id: businessesEnabled && (nextMode === 'income' || nextMode === 'expense') ? prev.business_id : '',
       from_account_id: nextMode === 'people' || mode === 'people' || nextMode === 'asset' || mode === 'asset' ? '' : prev.from_account_id,
       to_account_id: nextMode === 'people' || mode === 'people' || nextMode === 'asset' || mode === 'asset' ? '' : prev.to_account_id,
       from_asset_type_id: nextMode === 'asset' || mode === 'asset' ? '' : prev.from_asset_type_id,
@@ -318,6 +486,10 @@ export default function TransactionFormPage() {
       pushToast({ type: 'warning', message: 'Choose destination asset for opening/gift entry.' });
       return;
     }
+    if (actualType === 'asset' && !assetsEnabled) {
+      pushToast({ type: 'warning', message: 'Assets / Wealth module is turned off for this account.' });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -339,6 +511,7 @@ export default function TransactionFormPage() {
         from_asset_type_id: actualType === 'asset' ? form.from_asset_type_id || null : null,
         to_asset_type_id: actualType === 'asset' ? form.to_asset_type_id || null : null,
         category_id: actualType === 'income' || actualType === 'expense' ? form.category_id || null : null,
+        business_id: businessesEnabled && (actualType === 'income' || actualType === 'expense') ? form.business_id || null : null,
         note: form.note || '',
         location: form.location || '',
         receipt_path: form.receipt_path || null,
@@ -358,17 +531,23 @@ export default function TransactionFormPage() {
             ? peopleCounterpartyId
             : mode === 'asset'
               ? Number((assetAction === 'redeem' ? form.from_asset_type_id : form.to_asset_type_id) || 0) || null
-              : null
+              : null,
+        ledger_entry_id: !editing && ledgerConversionActive ? Number(ledgerEntry.id) : null
       };
 
+      const ledgerReturnTo = location.state?.ledgerReturnTo
+        || (ledgerEntry?.contact_id ? `/ledger/contacts/${ledgerEntry.contact_id}` : '/ledger');
       if (editing) {
         await updateTransaction(payload);
         pushToast({ type: 'success', message: 'Transaction updated.' });
       } else {
         await createTransaction(payload);
-        pushToast({ type: 'success', message: 'Transaction saved.' });
+        pushToast({
+          type: 'success',
+          message: ledgerConversionActive ? 'Ledger item converted to transaction.' : 'Transaction saved.'
+        });
       }
-      navigate('/transactions', { replace: true });
+      navigate(editing ? '/transactions' : (ledgerConversionActive ? ledgerReturnTo : '/transactions'), { replace: true });
     } catch (error) {
       pushToast({ type: 'danger', message: normalizeApiError(error) });
     } finally {
@@ -423,11 +602,13 @@ export default function TransactionFormPage() {
   const receiptExt = String(form.receipt_path || '').split('.').pop()?.toLowerCase() || '';
   const isImageReceipt = ['jpg', 'jpeg', 'png'].includes(receiptExt);
   const isPdfReceipt = receiptExt === 'pdf';
+  const baseTypeOptions = assetsEnabled ? typeOptions : typeOptions.filter((option) => option.value !== 'asset');
+  const visibleTypeOptions = ledgerConversionActive ? baseTypeOptions.filter((option) => option.value === mode) : baseTypeOptions;
 
   return (
     <AppShell
-      title={editing ? 'Edit Transaction' : 'Add Transaction'}
-      subtitle="Tap-first flow"
+      title={editing ? 'Edit Transaction' : ledgerConversionActive ? 'Convert Ledger Item' : 'Add Transaction'}
+      subtitle={ledgerConversionActive ? 'Select account and category to complete conversion' : 'Tap-first flow'}
       showFab={false}
       contentScrollable={false}
       contentClassName="overflow-hidden"
@@ -441,14 +622,21 @@ export default function TransactionFormPage() {
       ) : (
         <div className="flex min-h-0 flex-1 flex-col gap-2">
           <section className="card-surface flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-xl p-2 scroll-hidden">
+            {ledgerConversionActive ? (
+              <div className="shrink-0 rounded-xl bg-primary/10 px-3 py-2 text-xs text-primary">
+                Converting {ledgerEntry?.direction === 'payable' ? 'a payable into an expense' : 'a receivable into an income'}.
+                Amount and attachment are already pulled from Ledger.
+              </div>
+            ) : null}
             <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Type</p>
-            <div className="shrink-0 grid grid-cols-2 gap-1 sm:grid-cols-5">
-              {typeOptions.map((option) => {
+            <div className={`shrink-0 grid gap-1 ${ledgerConversionActive ? 'grid-cols-1' : 'grid-cols-2 sm:grid-cols-5'}`}>
+              {visibleTypeOptions.map((option) => {
                 const active = mode === option.value;
                 return (
                   <button
                     type="button"
                     key={option.value}
+                    disabled={ledgerConversionActive}
                     className={`rounded-lg border p-1.5 text-center transition-all ${
                       active
                         ? 'border-primary bg-primary/12 text-primary shadow-card'
@@ -531,11 +719,17 @@ export default function TransactionFormPage() {
                 className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xl font-extrabold text-slate-900 outline-none focus:border-primary dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                 placeholder="0.00"
                 value={form.amount}
+                readOnly={ledgerConversionActive}
                 onChange={(event) => setForm((prev) => ({ ...prev, amount: event.target.value }))}
               />
               <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
                 {formatCurrency(Number(form.amount || 0))}
               </p>
+              {ledgerConversionActive ? (
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                  Ledger conversion keeps the original amount.
+                </p>
+              ) : null}
               <label className="mt-2 block text-xs font-semibold text-slate-600 dark:text-slate-300">
                 Short Description
                 <input
@@ -595,6 +789,27 @@ export default function TransactionFormPage() {
                     No categories in this type.
                   </p>
                 )}
+                {businessesEnabled ? (
+                  <div className="mt-2">
+                    <div className="mb-1 flex items-center justify-between">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        Business
+                      </p>
+                      <Link to="/businesses" className="text-[11px] font-semibold text-primary">
+                        Manage
+                      </Link>
+                    </div>
+                    <BusinessStripSelector
+                      businesses={businesses}
+                      selected={form.business_id}
+                      onSelect={(value) => setForm((prev) => ({ ...prev, business_id: value }))}
+                      emptyLabel="No business"
+                    />
+                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                      Optional. Tag this {mode} to the business it belongs to.
+                    </p>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="rounded-xl bg-slate-100 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
@@ -792,11 +1007,11 @@ export default function TransactionFormPage() {
                         type="button"
                         className="rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200"
                         onClick={onPickReceipt}
-                        disabled={uploadingReceipt}
+                        disabled={uploadingReceipt || ledgerConversionActive}
                       >
                         {uploadingReceipt ? 'Uploading...' : form.receipt_path ? 'Replace' : 'Attach'}
                       </button>
-                      {form.receipt_path ? (
+                      {form.receipt_path && !ledgerConversionActive ? (
                         <button
                           type="button"
                           className="rounded-lg bg-red-100 px-2 py-1 text-[11px] font-semibold text-danger dark:bg-red-900/30"

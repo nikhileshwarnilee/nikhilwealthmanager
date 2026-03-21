@@ -6,9 +6,10 @@ require_once dirname(__DIR__, 2) . '/bootstrap.php';
 
 Request::enforceMethod('GET');
 $user = AuthMiddleware::user();
+$userId = AuthService::workspaceOwnerId($user);
 
 $type = trim((string) Request::query('type', ''));
-$params = [':user_id' => (int) $user['id']];
+$params = [':user_id' => $userId];
 $sql = 'SELECT id, name, type, icon, color, is_default, sort_order, created_at, updated_at
         FROM categories
         WHERE user_id = :user_id

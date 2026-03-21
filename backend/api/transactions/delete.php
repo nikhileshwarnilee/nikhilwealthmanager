@@ -10,10 +10,11 @@ if (!in_array(Request::method(), ['DELETE', 'POST'], true)) {
 }
 
 $user = AuthMiddleware::user();
+$workspaceUserId = AuthService::workspaceOwnerId($user);
 $input = Request::body();
 $id = Validator::positiveInt($input['id'] ?? Request::query('id', 0), 'id');
 
-TransactionService::delete((int) $user['id'], $id);
+TransactionService::delete($workspaceUserId, $id, $user);
 
 Response::success('Transaction deleted.');
 

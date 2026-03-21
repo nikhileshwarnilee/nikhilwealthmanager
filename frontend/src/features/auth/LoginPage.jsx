@@ -79,12 +79,8 @@ export default function LoginPage() {
             </Link>
           </div>
         </form>
-
         <p className="mt-4 text-center text-sm text-slate-600 dark:text-slate-300">
-          New user?{' '}
-          <Link className="font-semibold text-primary" to="/register">
-            Create account
-          </Link>
+          Need access? Ask your super admin to create your login.
         </p>
       </div>
     </div>

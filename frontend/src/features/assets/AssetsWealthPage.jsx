@@ -5,11 +5,19 @@ import AppShell from '../../components/AppShell';
 import CollapsibleIntervalSection from '../../components/CollapsibleIntervalSection';
 import EmptyState from '../../components/EmptyState';
 import Icon, { assetIconKey } from '../../components/Icon';
+import ReportExportSheet from '../../components/ReportExportSheet';
 import { useToast } from '../../app/ToastContext';
 import { useRouteState } from '../../hooks/useRouteState';
 import { fetchAssetReport, fetchAssets } from '../../services/assetService';
 import { normalizeApiError } from '../../services/http';
 import { formatCurrency } from '../../utils/format';
+import {
+  buildReportDefinition,
+  exportReportDefinition,
+  formatReportDateRange,
+  reportDateRangeFromInterval,
+  validateReportDateRange
+} from '../../utils/reportExport';
 import { createDefaultIntervalState, intervalDisplayLabel, intervalSummaryParams, shiftIntervalState } from '../../utils/intervals';
 
 const chartColors = ['#0ea5e9', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#14b8a6', '#f97316', '#e11d48'];
@@ -25,6 +33,7 @@ export default function AssetsWealthPage() {
   const [summary, setSummary] = useState(null);
   const [assets, setAssets] = useState([]);
   const [report, setReport] = useState(null);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const intervalLabel = useMemo(() => intervalDisplayLabel(interval), [interval]);
   const summaryParams = useMemo(() => intervalSummaryParams(interval), [interval]);
@@ -98,6 +107,7 @@ export default function AssetsWealthPage() {
       cumulative_net_invested: Number(row.cumulative_net_invested || 0)
     }));
   }, [report]);
+  const defaultExportRange = useMemo(() => reportDateRangeFromInterval(interval), [interval]);
 
   const onSwipePrevInterval = useCallback(() => {
     setInterval((prev) => shiftIntervalState(prev, -1));
@@ -105,6 +115,134 @@ export default function AssetsWealthPage() {
   const onSwipeNextInterval = useCallback(() => {
     setInterval((prev) => shiftIntervalState(prev, 1));
   }, []);
+  const onGenerateReport = useCallback(
+    async ({ format, fromDate, toDate }) => {
+      try {
+        const range = validateReportDateRange({ fromDate, toDate });
+        const reportData = await fetchAssetReport({
+          date_from: range.fromDate,
+          date_to: range.toDate
+        });
+
+        const definition = buildReportDefinition({
+          title: 'Assets / Wealth Report',
+          subtitle: 'Portfolio snapshot, allocation, and growth analysis',
+          fileName: 'assets-wealth-report',
+          dateRangeLabel: formatReportDateRange(range.fromDate, range.toDate),
+          meta: [
+            { label: 'View Interval', value: intervalLabel },
+            { label: 'Search', value: searchTerm.trim() || 'None' },
+            {
+              label: 'Report Note',
+              value: 'Portfolio snapshot uses current holdings while trend tables follow the selected date range.'
+            }
+          ],
+          summary: [
+            { label: 'Invested', value: formatCurrency(reportData?.totals?.total_invested || 0) },
+            { label: 'Current Value', value: formatCurrency(reportData?.totals?.total_current_value || 0) },
+            { label: 'Gain / Loss', value: formatCurrency(reportData?.totals?.total_gain_loss || 0) },
+            { label: 'Assets', value: String(reportData?.totals?.asset_count || 0) }
+          ],
+          tables: [
+            {
+              name: 'Portfolio Snapshot',
+              columns: [
+                { key: 'name', label: 'Asset' },
+                { key: 'invested_amount', label: 'Invested' },
+                { key: 'current_value', label: 'Current Value' },
+                { key: 'gain_loss', label: 'Gain / Loss' },
+                { key: 'gain_loss_percent', label: 'Gain / Loss %' },
+                { key: 'notes', label: 'Notes' }
+              ],
+              rows: filteredAssets.map((asset) => ({
+                name: asset.name || '-',
+                invested_amount: formatCurrency(asset.invested_amount || 0),
+                current_value: formatCurrency(asset.current_value || 0),
+                gain_loss: formatCurrency(asset.gain_loss || 0),
+                gain_loss_percent: `${Number(asset.gain_loss_percent || 0)}%`,
+                notes: asset.notes || ''
+              }))
+            },
+            {
+              name: 'Allocation Breakdown',
+              columns: [
+                { key: 'asset_name', label: 'Asset' },
+                { key: 'current_value', label: 'Current Value' },
+                { key: 'allocation_percent', label: 'Allocation' }
+              ],
+              rows: (reportData?.asset_allocation || []).map((row) => ({
+                asset_name: row.asset_name || '-',
+                current_value: formatCurrency(row.current_value || 0),
+                allocation_percent: `${Number(row.allocation_percent || 0)}%`
+              }))
+            },
+            {
+              name: 'Invested vs Current',
+              columns: [
+                { key: 'asset_name', label: 'Asset' },
+                { key: 'invested_amount', label: 'Invested' },
+                { key: 'current_value', label: 'Current Value' }
+              ],
+              rows: (reportData?.invested_vs_current || []).map((row) => ({
+                asset_name: row.asset_name || '-',
+                invested_amount: formatCurrency(row.invested_amount || 0),
+                current_value: formatCurrency(row.current_value || 0)
+              }))
+            },
+            {
+              name: 'Gain Loss by Asset',
+              columns: [
+                { key: 'asset_name', label: 'Asset' },
+                { key: 'gain_loss', label: 'Gain / Loss' },
+                { key: 'gain_loss_percent', label: 'Gain / Loss %' }
+              ],
+              rows: (reportData?.gain_loss_by_type || []).map((row) => ({
+                asset_name: row.asset_name || '-',
+                gain_loss: formatCurrency(row.gain_loss || 0),
+                gain_loss_percent: `${Number(row.gain_loss_percent || 0)}%`
+              }))
+            },
+            {
+              name: 'Growth Over Time',
+              columns: [
+                { key: 'label', label: 'Date' },
+                { key: 'invested_in', label: 'Invested In' },
+                { key: 'redeemed_out', label: 'Redeemed Out' },
+                { key: 'net_invested', label: 'Net Invested' },
+                { key: 'cumulative_net_invested', label: 'Cumulative Net' }
+              ],
+              rows: (reportData?.growth_over_time || []).map((row) => ({
+                label: row.label || '-',
+                invested_in: formatCurrency(row.invested_in || 0),
+                redeemed_out: formatCurrency(row.redeemed_out || 0),
+                net_invested: formatCurrency(row.net_invested || 0),
+                cumulative_net_invested: formatCurrency(row.cumulative_net_invested || 0)
+              }))
+            },
+            {
+              name: 'Value Updates',
+              columns: [
+                { key: 'label', label: 'Date' },
+                { key: 'reported_value', label: 'Reported Value' },
+                { key: 'updates_count', label: 'Updates' }
+              ],
+              rows: (reportData?.value_updates_over_time || []).map((row) => ({
+                label: row.label || '-',
+                reported_value: formatCurrency(row.reported_value || 0),
+                updates_count: String(row.updates_count || 0)
+              }))
+            }
+          ]
+        });
+
+        await exportReportDefinition(format, definition);
+        pushToast({ type: 'success', message: `${format.toUpperCase()} report generated.` });
+      } catch (error) {
+        pushToast({ type: 'danger', message: error?.message || normalizeApiError(error) });
+      }
+    },
+    [filteredAssets, intervalLabel, pushToast, searchTerm]
+  );
 
   return (
     <AppShell
@@ -112,6 +250,7 @@ export default function AssetsWealthPage() {
       subtitle={`Interval: ${intervalLabel}`}
       onRefresh={load}
       showFab={false}
+      onExport={() => setExportOpen(true)}
       searchEnabled
       searchOpen={searchOpen}
       searchValue={searchTerm}
@@ -267,6 +406,15 @@ export default function AssetsWealthPage() {
           </section>
         </>
       )}
+
+      <ReportExportSheet
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title="Assets / Wealth Report"
+        subtitle="Generate a PDF, Excel, or CSV wealth report"
+        defaultRange={defaultExportRange}
+        onGenerate={onGenerateReport}
+      />
     </AppShell>
   );
 }

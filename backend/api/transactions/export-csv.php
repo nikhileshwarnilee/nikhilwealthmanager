@@ -6,17 +6,22 @@ require_once dirname(__DIR__, 2) . '/bootstrap.php';
 
 Request::enforceMethod('GET');
 $user = AuthMiddleware::user();
-$userId = (int) $user['id'];
+$userId = AuthService::workspaceOwnerId($user);
+$allowedAccountIds = UserAccountAccessService::allowedAccountIds($user);
 
 $type = trim((string) Request::query('type', ''));
 $accountId = Request::query('account_id', '');
+$businessId = Request::query('business_id', '');
 $categoryId = Request::query('category_id', '');
+$createdByUserId = WorkspaceUserService::resolveTransactionCreatorFilter($user, Request::query('created_by_user_id', ''));
 $search = Validator::string(Request::query('search', ''), 100);
 $dateFrom = trim((string) Request::query('date_from', ''));
 $dateTo = trim((string) Request::query('date_to', ''));
+$showUserAttribution = WorkspaceUserService::shouldShowTransactionAttribution($user);
 
 $params = [':user_id' => $userId];
 $where = ['t.user_id = :user_id', 't.is_deleted = 0'];
+$where[] = '1 = 1' . UserAccountAccessService::buildTransactionScopeSql('t', $allowedAccountIds, $params, 'tx_export_scope');
 
 if ($type !== '') {
     $type = Validator::enum($type, ['income', 'expense', 'transfer', 'opening_adjustment', 'asset'], 'type');
@@ -29,10 +34,19 @@ if ($accountId !== '') {
     $params[':account_from_id'] = $accountIdInt;
     $params[':account_to_id'] = $accountIdInt;
 }
+if ($businessId !== '') {
+    $businessIdInt = Validator::positiveInt($businessId, 'business_id');
+    $where[] = 't.business_id = :business_id';
+    $params[':business_id'] = $businessIdInt;
+}
 if ($categoryId !== '') {
     $categoryIdInt = Validator::positiveInt($categoryId, 'category_id');
     $where[] = 't.category_id = :category_id';
     $params[':category_id'] = $categoryIdInt;
+}
+if ($createdByUserId !== null) {
+    $where[] = 't.created_by_user_id = :created_by_user_id';
+    $params[':created_by_user_id'] = $createdByUserId;
 }
 if ($dateFrom !== '') {
     $from = Validator::dateTime($dateFrom, false);
@@ -45,7 +59,7 @@ if ($dateTo !== '') {
     $params[':date_to'] = date('Y-m-d 23:59:59', strtotime($to));
 }
 if ($search !== '') {
-    $where[] = '(t.note LIKE :search_note OR c.name LIKE :search_category OR fa.name LIKE :search_from OR ta.name LIKE :search_to OR fas.name LIKE :search_from_asset OR tas.name LIKE :search_to_asset)';
+    $where[] = '(t.note LIKE :search_note OR c.name LIKE :search_category OR fa.name LIKE :search_from OR ta.name LIKE :search_to OR fas.name LIKE :search_from_asset OR tas.name LIKE :search_to_asset OR b.name LIKE :search_business OR b.notes LIKE :search_business_notes OR creator.name LIKE :search_creator)';
     $searchLike = '%' . $search . '%';
     $params[':search_note'] = $searchLike;
     $params[':search_category'] = $searchLike;
@@ -53,6 +67,9 @@ if ($search !== '') {
     $params[':search_to'] = $searchLike;
     $params[':search_from_asset'] = $searchLike;
     $params[':search_to_asset'] = $searchLike;
+    $params[':search_business'] = $searchLike;
+    $params[':search_business_notes'] = $searchLike;
+    $params[':search_creator'] = $searchLike;
 }
 
 $whereSql = implode(' AND ', $where);
@@ -68,6 +85,9 @@ $sql = "SELECT
             t.reference_type,
             t.reference_id,
             t.note,
+            t.created_by_user_id,
+            creator.name AS created_by_name,
+            b.name AS business_name,
             fa.name AS from_account_name,
             ta.name AS to_account_name,
             fas.name AS from_asset_type_name,
@@ -78,7 +98,9 @@ $sql = "SELECT
         LEFT JOIN accounts ta ON ta.id = t.to_account_id AND ta.user_id = t.user_id AND ta.is_deleted = 0
         LEFT JOIN asset_types fas ON fas.id = t.from_asset_type_id AND fas.user_id = t.user_id AND fas.is_deleted = 0
         LEFT JOIN asset_types tas ON tas.id = t.to_asset_type_id AND tas.user_id = t.user_id AND tas.is_deleted = 0
+        LEFT JOIN businesses b ON b.id = t.business_id AND b.user_id = t.user_id AND b.is_deleted = 0
         LEFT JOIN categories c ON c.id = t.category_id AND c.user_id = t.user_id AND c.is_deleted = 0
+        LEFT JOIN users creator ON creator.id = t.created_by_user_id
         WHERE {$whereSql}
         ORDER BY t.transaction_date DESC, t.id DESC
         LIMIT 10000";
@@ -105,7 +127,7 @@ $sanitizeCell = static function (mixed $value): string {
     return $text;
 };
 
-fputcsv($fp, [
+$header = [
     'ID',
     'Date',
     'Type',
@@ -116,13 +138,18 @@ fputcsv($fp, [
     'From Asset',
     'To Asset',
     'Category',
+    'Business',
     'Reference Type',
     'Reference ID',
     'Note',
-]);
+];
+if ($showUserAttribution) {
+    $header[] = 'Created By';
+}
+fputcsv($fp, $header);
 
 foreach ($rows as $row) {
-    fputcsv($fp, [
+    $csvRow = [
         $sanitizeCell($row['id']),
         $sanitizeCell($row['transaction_date']),
         $sanitizeCell($row['type']),
@@ -133,10 +160,15 @@ foreach ($rows as $row) {
         $sanitizeCell($row['from_asset_type_name']),
         $sanitizeCell($row['to_asset_type_name']),
         $sanitizeCell($row['category_name']),
+        $sanitizeCell($row['business_name']),
         $sanitizeCell($row['reference_type']),
         $sanitizeCell($row['reference_id']),
         $sanitizeCell($row['note']),
-    ]);
+    ];
+    if ($showUserAttribution) {
+        $csvRow[] = $sanitizeCell($row['created_by_name']);
+    }
+    fputcsv($fp, $csvRow);
 }
 
 fclose($fp);

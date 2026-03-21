@@ -8,7 +8,7 @@ RateLimitMiddleware::enforce('assets_update_value', 200, 600);
 Request::enforceMethod('POST');
 
 $user = AuthMiddleware::user();
-$userId = (int) $user['id'];
+$userId = AuthService::workspaceOwnerId($user);
 $input = Request::body();
 
 $assetTypeId = Validator::positiveInt($input['asset_type_id'] ?? 0, 'asset_type_id');

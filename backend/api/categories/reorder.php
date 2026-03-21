@@ -10,7 +10,7 @@ if (!in_array(Request::method(), ['POST', 'PUT', 'PATCH'], true)) {
 }
 
 $user = AuthMiddleware::user();
-$userId = (int) $user['id'];
+$userId = AuthService::workspaceOwnerId($user);
 $input = Request::body();
 
 $type = Validator::enum($input['type'] ?? '', ['income', 'expense'], 'category type');

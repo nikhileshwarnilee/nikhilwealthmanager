@@ -1,9 +1,12 @@
 import { Suspense, lazy } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { useAuth } from './AuthContext';
 import ProtectedRoute from '../components/ProtectedRoute';
 import PublicRoute from '../components/PublicRoute';
 import SkeletonScreen from '../components/SkeletonScreen';
 import ToastViewport from '../components/ToastViewport';
+import { isModuleEnabled } from '../utils/modules';
+import { canManageUsers, hasFeatureAccess } from '../utils/permissions';
 
 const LoginPage = lazy(() => import('../features/auth/LoginPage'));
 const RegisterPage = lazy(() => import('../features/auth/RegisterPage'));
@@ -22,14 +25,31 @@ const AccountEditPage = lazy(() => import('../features/accounts/AccountEditPage'
 const AssetsWealthPage = lazy(() => import('../features/assets/AssetsWealthPage'));
 const AssetTypesPage = lazy(() => import('../features/assets/AssetTypesPage'));
 const AssetViewPage = lazy(() => import('../features/assets/AssetViewPage'));
+const BusinessesPage = lazy(() => import('../features/businesses/BusinessesPage'));
+const LedgerPage = lazy(() => import('../features/ledger/LedgerPage'));
+const LedgerContactPage = lazy(() => import('../features/ledger/LedgerContactPage'));
 const CategoriesPage = lazy(() => import('../pages/CategoriesPage'));
 const CategoryFormPage = lazy(() => import('../pages/CategoryFormPage'));
 const BudgetsPage = lazy(() => import('../pages/BudgetsPage'));
 const BudgetViewPage = lazy(() => import('../features/budgets/BudgetViewPage'));
 const CategoryViewPage = lazy(() => import('../features/categories/CategoryViewPage'));
 const SettingsPage = lazy(() => import('../pages/SettingsPage'));
+const ModulesPage = lazy(() => import('../features/settings/ModulesPage'));
+const UsersPage = lazy(() => import('../features/settings/UsersPage'));
 
 export default function App() {
+  const { user, settings } = useAuth();
+  const businessesEnabled = isModuleEnabled(settings, 'businesses');
+  const ledgerEnabled = isModuleEnabled(settings, 'ledger');
+  const assetsEnabled = isModuleEnabled(settings, 'assets');
+  const transactionsEnabled = hasFeatureAccess(user, 'transactions');
+  const accountsEnabled = hasFeatureAccess(user, 'accounts');
+  const categoriesEnabled = hasFeatureAccess(user, 'categories');
+  const budgetsEnabled = hasFeatureAccess(user, 'budgets');
+  const chartsEnabled = hasFeatureAccess(user, 'charts');
+  const reportsEnabled = hasFeatureAccess(user, 'reports');
+  const usersEnabled = canManageUsers(user) && Boolean(settings?.workspace_users_access_enabled);
+
   return (
     <>
       <Suspense fallback={<SkeletonScreen />}>
@@ -87,7 +107,7 @@ export default function App() {
             path="/transactions"
             element={
               <ProtectedRoute>
-                <TransactionsPage />
+                {transactionsEnabled ? <TransactionsPage /> : <Navigate to="/" replace />}
               </ProtectedRoute>
             }
           />
@@ -95,7 +115,7 @@ export default function App() {
             path="/transactions/history"
             element={
               <ProtectedRoute>
-                <FullHistoryPage />
+                {transactionsEnabled ? <FullHistoryPage /> : <Navigate to="/" replace />}
               </ProtectedRoute>
             }
           />
@@ -103,7 +123,7 @@ export default function App() {
             path="/charts"
             element={
               <ProtectedRoute>
-                <ChartsPage />
+                {chartsEnabled ? <ChartsPage /> : <Navigate to="/" replace />}
               </ProtectedRoute>
             }
           />
@@ -111,7 +131,7 @@ export default function App() {
             path="/reports/category/:id"
             element={
               <ProtectedRoute>
-                <CategoryBreakdownPage />
+                {reportsEnabled ? <CategoryBreakdownPage /> : <Navigate to="/" replace />}
               </ProtectedRoute>
             }
           />
@@ -119,7 +139,7 @@ export default function App() {
             path="/transactions/new"
             element={
               <ProtectedRoute>
-                <TransactionFormPage />
+                {transactionsEnabled ? <TransactionFormPage /> : <Navigate to="/" replace />}
               </ProtectedRoute>
             }
           />
@@ -127,7 +147,7 @@ export default function App() {
             path="/transactions/:id"
             element={
               <ProtectedRoute>
-                <TransactionViewPage />
+                {transactionsEnabled ? <TransactionViewPage /> : <Navigate to="/" replace />}
               </ProtectedRoute>
             }
           />
@@ -135,7 +155,7 @@ export default function App() {
             path="/transactions/:id/edit"
             element={
               <ProtectedRoute>
-                <TransactionFormPage />
+                {transactionsEnabled ? <TransactionFormPage /> : <Navigate to="/" replace />}
               </ProtectedRoute>
             }
           />
@@ -143,7 +163,7 @@ export default function App() {
             path="/budgets"
             element={
               <ProtectedRoute>
-                <BudgetsPage />
+                {budgetsEnabled ? <BudgetsPage /> : <Navigate to="/" replace />}
               </ProtectedRoute>
             }
           />
@@ -151,7 +171,7 @@ export default function App() {
             path="/budgets/:id"
             element={
               <ProtectedRoute>
-                <BudgetViewPage />
+                {budgetsEnabled ? <BudgetViewPage /> : <Navigate to="/" replace />}
               </ProtectedRoute>
             }
           />
@@ -159,7 +179,7 @@ export default function App() {
             path="/accounts"
             element={
               <ProtectedRoute>
-                <AccountsPage />
+                {accountsEnabled ? <AccountsPage /> : <Navigate to="/" replace />}
               </ProtectedRoute>
             }
           />
@@ -167,7 +187,7 @@ export default function App() {
             path="/accounts/:id"
             element={
               <ProtectedRoute>
-                <AccountViewPage />
+                {accountsEnabled ? <AccountViewPage /> : <Navigate to="/" replace />}
               </ProtectedRoute>
             }
           />
@@ -175,7 +195,7 @@ export default function App() {
             path="/accounts/:id/edit"
             element={
               <ProtectedRoute>
-                <AccountEditPage />
+                {accountsEnabled ? <AccountEditPage /> : <Navigate to="/" replace />}
               </ProtectedRoute>
             }
           />
@@ -183,7 +203,7 @@ export default function App() {
             path="/assets"
             element={
               <ProtectedRoute>
-                <AssetsWealthPage />
+                {assetsEnabled ? <AssetsWealthPage /> : <Navigate to="/settings/modules" replace />}
               </ProtectedRoute>
             }
           />
@@ -191,7 +211,7 @@ export default function App() {
             path="/assets/types"
             element={
               <ProtectedRoute>
-                <AssetTypesPage />
+                {assetsEnabled ? <AssetTypesPage /> : <Navigate to="/settings/modules" replace />}
               </ProtectedRoute>
             }
           />
@@ -199,7 +219,39 @@ export default function App() {
             path="/assets/:id"
             element={
               <ProtectedRoute>
-                <AssetViewPage />
+                {assetsEnabled ? <AssetViewPage /> : <Navigate to="/settings/modules" replace />}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/businesses"
+            element={
+              <ProtectedRoute>
+                {businessesEnabled ? <BusinessesPage /> : <Navigate to="/settings/modules" replace />}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/ledger"
+            element={
+              <ProtectedRoute>
+                {ledgerEnabled ? <LedgerPage /> : <Navigate to="/settings/modules" replace />}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/ledger/contacts/:id"
+            element={
+              <ProtectedRoute>
+                {ledgerEnabled ? <LedgerContactPage /> : <Navigate to="/settings/modules" replace />}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings/modules"
+            element={
+              <ProtectedRoute>
+                <ModulesPage />
               </ProtectedRoute>
             }
           />
@@ -207,7 +259,7 @@ export default function App() {
             path="/categories"
             element={
               <ProtectedRoute>
-                <CategoriesPage />
+                {categoriesEnabled ? <CategoriesPage /> : <Navigate to="/" replace />}
               </ProtectedRoute>
             }
           />
@@ -215,7 +267,7 @@ export default function App() {
             path="/categories/:id"
             element={
               <ProtectedRoute>
-                <CategoryViewPage />
+                {categoriesEnabled ? <CategoryViewPage /> : <Navigate to="/" replace />}
               </ProtectedRoute>
             }
           />
@@ -223,7 +275,7 @@ export default function App() {
             path="/categories/new"
             element={
               <ProtectedRoute>
-                <CategoryFormPage />
+                {categoriesEnabled ? <CategoryFormPage /> : <Navigate to="/" replace />}
               </ProtectedRoute>
             }
           />
@@ -231,7 +283,15 @@ export default function App() {
             path="/categories/:id/edit"
             element={
               <ProtectedRoute>
-                <CategoryFormPage />
+                {categoriesEnabled ? <CategoryFormPage /> : <Navigate to="/" replace />}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings/users"
+            element={
+              <ProtectedRoute>
+                {usersEnabled ? <UsersPage /> : <Navigate to="/settings" replace />}
               </ProtectedRoute>
             }
           />

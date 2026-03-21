@@ -9,8 +9,11 @@ DROP TABLE IF EXISTS refresh_tokens;
 DROP TABLE IF EXISTS password_reset_tokens;
 DROP TABLE IF EXISTS budgets;
 DROP TABLE IF EXISTS asset_value_history;
+DROP TABLE IF EXISTS ledger_entries;
 DROP TABLE IF EXISTS transactions;
+DROP TABLE IF EXISTS ledger_contacts;
 DROP TABLE IF EXISTS asset_types;
+DROP TABLE IF EXISTS businesses;
 DROP TABLE IF EXISTS categories;
 DROP TABLE IF EXISTS accounts;
 DROP TABLE IF EXISTS user_settings;
@@ -21,6 +24,13 @@ CREATE TABLE users (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(120) NOT NULL,
   email VARCHAR(190) NOT NULL UNIQUE,
+  role VARCHAR(30) NOT NULL DEFAULT 'user',
+  permissions_json JSON NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  workspace_owner_user_id BIGINT UNSIGNED NULL,
+  allowed_account_ids_json JSON NULL,
+  default_account_id BIGINT UNSIGNED NULL,
+  transaction_access_json JSON NULL,
   password_hash VARCHAR(255) NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -32,6 +42,7 @@ CREATE TABLE user_settings (
   currency VARCHAR(10) NOT NULL DEFAULT 'INR',
   dark_mode TINYINT(1) NOT NULL DEFAULT 0,
   last_transaction_filters JSON NULL,
+  modules_json JSON NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_user_settings_user
@@ -96,14 +107,48 @@ CREATE TABLE asset_types (
   INDEX idx_asset_types_user_deleted (user_id, is_deleted)
 ) ENGINE=InnoDB;
 
+CREATE TABLE businesses (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  notes VARCHAR(255) NULL,
+  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_businesses_user
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY uq_businesses_user_name_active (user_id, name, is_deleted),
+  INDEX idx_businesses_user_deleted (user_id, is_deleted)
+) ENGINE=InnoDB;
+
+CREATE TABLE ledger_contacts (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  party_type ENUM('customer', 'supplier', 'both') NOT NULL DEFAULT 'customer',
+  phone VARCHAR(40) NULL,
+  email VARCHAR(150) NULL,
+  notes VARCHAR(255) NULL,
+  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_ledger_contacts_user
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY uq_ledger_contacts_user_name_active (user_id, name, is_deleted),
+  INDEX idx_ledger_contacts_user_deleted (user_id, is_deleted),
+  INDEX idx_ledger_contacts_user_party (user_id, party_type, is_deleted)
+) ENGINE=InnoDB;
+
 CREATE TABLE transactions (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   user_id BIGINT UNSIGNED NOT NULL,
+  created_by_user_id BIGINT UNSIGNED NULL,
   from_account_id BIGINT UNSIGNED NULL,
   to_account_id BIGINT UNSIGNED NULL,
   from_asset_type_id BIGINT UNSIGNED NULL,
   to_asset_type_id BIGINT UNSIGNED NULL,
   category_id BIGINT UNSIGNED NULL,
+  business_id BIGINT UNSIGNED NULL,
   amount DECIMAL(14,2) NOT NULL,
   type ENUM('income', 'expense', 'transfer', 'opening_adjustment', 'asset') NOT NULL,
   running_balance DECIMAL(14,2) NOT NULL DEFAULT 0.00,
@@ -128,16 +173,46 @@ CREATE TABLE transactions (
     FOREIGN KEY (to_asset_type_id) REFERENCES asset_types(id) ON DELETE SET NULL,
   CONSTRAINT fk_transactions_category
     FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
+  CONSTRAINT fk_transactions_business
+    FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE SET NULL,
   INDEX idx_transactions_user_date (user_id, transaction_date),
   INDEX idx_transactions_user_type_date (user_id, type, transaction_date),
   INDEX idx_transactions_user_category (user_id, category_id),
+  INDEX idx_transactions_user_business (user_id, business_id),
   INDEX idx_transactions_user_from (user_id, from_account_id),
   INDEX idx_transactions_user_to (user_id, to_account_id),
   INDEX idx_transactions_user_from_asset (user_id, from_asset_type_id),
   INDEX idx_transactions_user_to_asset (user_id, to_asset_type_id),
+  INDEX idx_transactions_user_created_by_date (user_id, created_by_user_id, transaction_date),
   INDEX idx_transactions_user_deleted_date (user_id, is_deleted, transaction_date),
   INDEX idx_transactions_user_deleted_type_category_date (user_id, is_deleted, type, category_id, transaction_date),
+  INDEX idx_transactions_user_deleted_business_date (user_id, is_deleted, business_id, transaction_date),
   INDEX idx_transactions_reference (reference_type, reference_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE ledger_entries (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NOT NULL,
+  contact_id BIGINT UNSIGNED NOT NULL,
+  direction ENUM('receivable', 'payable') NOT NULL,
+  amount DECIMAL(14,2) NOT NULL,
+  note VARCHAR(255) NULL,
+  attachment_path VARCHAR(255) NULL,
+  status ENUM('open', 'converted', 'cancelled') NOT NULL DEFAULT 'open',
+  converted_transaction_id BIGINT UNSIGNED NULL,
+  converted_at DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_ledger_entries_user
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_ledger_entries_contact
+    FOREIGN KEY (contact_id) REFERENCES ledger_contacts(id) ON DELETE CASCADE,
+  CONSTRAINT fk_ledger_entries_transaction
+    FOREIGN KEY (converted_transaction_id) REFERENCES transactions(id) ON DELETE SET NULL,
+  INDEX idx_ledger_entries_user_status_direction (user_id, status, direction),
+  INDEX idx_ledger_entries_contact_status (contact_id, status),
+  INDEX idx_ledger_entries_transaction (converted_transaction_id),
+  INDEX idx_ledger_entries_user_created (user_id, created_at)
 ) ENGINE=InnoDB;
 
 CREATE TABLE asset_value_history (
@@ -206,8 +281,14 @@ CREATE TABLE password_reset_tokens (
 INSERT INTO users (id, name, email, password_hash) VALUES
   (1, 'Demo User', 'demo@example.com', '$2y$10$WESO4SSCYrnZZP6nQ.xhSecI3wEOnTlSnOdOLJ3g5dETL.V4l1vTy');
 
-INSERT INTO user_settings (user_id, currency, dark_mode, last_transaction_filters) VALUES
-  (1, 'INR', 0, JSON_OBJECT('type', '', 'account_id', '', 'asset_type_id', '', 'category_id', '', 'search', '', 'date_from', '', 'date_to', ''));
+INSERT INTO user_settings (user_id, currency, dark_mode, last_transaction_filters, modules_json) VALUES
+  (
+    1,
+    'INR',
+    0,
+    JSON_OBJECT('type', '', 'account_id', '', 'asset_type_id', '', 'business_id', '', 'category_id', '', 'search', '', 'date_from', '', 'date_to', ''),
+    JSON_OBJECT('businesses', TRUE, 'ledger', TRUE, 'assets', TRUE, 'users_access', TRUE)
+  );
 
 INSERT INTO accounts (id, user_id, name, type, initial_balance, current_balance, currency, is_archived) VALUES
   (1, 1, 'Cash Wallet', 'cash', 5000.00, 5000.00, 'INR', 0),

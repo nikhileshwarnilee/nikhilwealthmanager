@@ -8,7 +8,7 @@ RateLimitMiddleware::enforce('assets_create', 120, 600);
 Request::enforceMethod('POST');
 
 $user = AuthMiddleware::user();
-$userId = (int) $user['id'];
+$userId = AuthService::workspaceOwnerId($user);
 $input = Request::body();
 
 $assetType = AssetService::createType($userId, $input);

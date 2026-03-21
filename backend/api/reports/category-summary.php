@@ -6,11 +6,14 @@ require_once dirname(__DIR__, 2) . '/bootstrap.php';
 
 Request::enforceMethod('GET');
 $user = AuthMiddleware::user();
-$userId = (int) $user['id'];
+$userId = AuthService::workspaceOwnerId($user);
+$allowedAccountIds = UserAccountAccessService::allowedAccountIds($user);
 $month = trim((string) Request::query('month', date('Y-m')));
 $dateFromRaw = trim((string) Request::query('date_from', ''));
 $dateToRaw = trim((string) Request::query('date_to', ''));
 $type = Validator::enum(Request::query('type', 'expense'), ['income', 'expense'], 'type');
+$businessId = Validator::nullablePositiveInt(Request::query('business_id', ''));
+$createdByUserId = WorkspaceUserService::resolveTransactionCreatorFilter($user, Request::query('created_by_user_id', ''));
 
 if ($month === '') {
     $month = date('Y-m');
@@ -58,6 +61,25 @@ $params = [
     ':user_id' => $userId,
     ':category_type' => $type,
 ];
+$sql .= UserAccountAccessService::buildTransactionScopeSql(
+    't',
+    $allowedAccountIds,
+    $params,
+    'report_category_summary',
+    false
+);
+
+if ($businessId !== null) {
+    $sql .= '
+      AND t.business_id = :business_id';
+    $params[':business_id'] = $businessId;
+}
+
+if ($createdByUserId !== null) {
+    $sql .= '
+      AND t.created_by_user_id = :created_by_user_id';
+    $params[':created_by_user_id'] = $createdByUserId;
+}
 
 if ($rangeStart !== null && $rangeEnd !== null) {
     $sql .= '
@@ -105,6 +127,8 @@ Response::success('Category report summary fetched.', [
     'date_from' => $rangeStart !== null ? date('Y-m-d', strtotime($rangeStart)) : null,
     'date_to' => $rangeEnd !== null ? date('Y-m-d', strtotime($rangeEnd)) : null,
     'type' => $type,
+    'business_id' => $businessId,
+    'created_by_user_id' => $createdByUserId,
     'total_amount' => round($totalAmount, 2),
     'total_transactions' => $totalTransactions,
     'categories' => $categories,

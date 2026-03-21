@@ -1,7 +1,14 @@
 import { Link } from 'react-router-dom';
+import { useAuth } from '../app/AuthContext';
+import { hasFeatureAccess } from '../utils/permissions';
 import Icon from './Icon';
 
 export default function FabAddButton() {
+  const { user } = useAuth();
+  if (!hasFeatureAccess(user, 'transactions')) {
+    return null;
+  }
+
   return (
     <Link
       to="/transactions/new"

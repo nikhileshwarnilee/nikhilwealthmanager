@@ -10,10 +10,11 @@ if (!in_array(Request::method(), ['DELETE', 'POST'], true)) {
 }
 
 $user = AuthMiddleware::user();
+$userId = AuthService::workspaceOwnerId($user);
 $input = Request::body();
 $id = Validator::positiveInt($input['id'] ?? Request::query('id', 0), 'id');
 
-BudgetService::delete((int) $user['id'], $id);
+BudgetService::delete($userId, $id);
 
 Response::success('Budget deleted.');
 

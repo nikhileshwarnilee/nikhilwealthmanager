@@ -12,13 +12,20 @@ require_once __DIR__ . '/utils/Jwt.php';
 require_once __DIR__ . '/utils/Pagination.php';
 
 require_once __DIR__ . '/services/CategoryService.php';
+require_once __DIR__ . '/services/PermissionService.php';
+require_once __DIR__ . '/services/UserSettingsService.php';
 require_once __DIR__ . '/services/AuthService.php';
+require_once __DIR__ . '/services/WorkspaceUserService.php';
+require_once __DIR__ . '/services/UserAccountAccessService.php';
+require_once __DIR__ . '/services/UserAdminService.php';
 require_once __DIR__ . '/services/TokenService.php';
 require_once __DIR__ . '/services/MailService.php';
 require_once __DIR__ . '/services/PasswordResetService.php';
 require_once __DIR__ . '/services/BalanceRecalculationService.php';
 require_once __DIR__ . '/services/SchemaService.php';
 require_once __DIR__ . '/services/AssetService.php';
+require_once __DIR__ . '/services/BusinessService.php';
+require_once __DIR__ . '/services/LedgerService.php';
 require_once __DIR__ . '/services/TransactionService.php';
 require_once __DIR__ . '/services/BudgetService.php';
 require_once __DIR__ . '/services/InsightService.php';
@@ -39,4 +46,4 @@ header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 header('Expires: 0');
 
-SchemaService::ensureAssetsSchema();
+SchemaService::ensureFeatureSchema();

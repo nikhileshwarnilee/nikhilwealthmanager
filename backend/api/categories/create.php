@@ -7,7 +7,7 @@ require_once dirname(__DIR__, 2) . '/bootstrap.php';
 RateLimitMiddleware::enforce('categories_create', 120, 600);
 Request::enforceMethod('POST');
 $user = AuthMiddleware::user();
-$userId = (int) $user['id'];
+$userId = AuthService::workspaceOwnerId($user);
 
 $input = Request::body();
 $name = Validator::string($input['name'] ?? '', 120);

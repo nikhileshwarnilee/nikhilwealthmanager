@@ -10,10 +10,11 @@ if (!in_array(Request::method(), ['PUT', 'PATCH', 'POST'], true)) {
 }
 
 $user = AuthMiddleware::user();
+$workspaceUserId = AuthService::workspaceOwnerId($user);
 $input = Request::body();
 $id = Validator::positiveInt($input['id'] ?? 0, 'id');
 
-$transaction = TransactionService::update((int) $user['id'], $id, $input);
+$transaction = TransactionService::update($workspaceUserId, $id, $input, $user);
 
 Response::success('Transaction updated.', [
     'transaction' => $transaction,

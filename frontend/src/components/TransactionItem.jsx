@@ -1,11 +1,17 @@
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { useAuth } from '../app/AuthContext';
 import Icon, { assetIconKey, categoryIconKey } from './Icon';
 import { formatCurrency, formatDate } from '../utils/format';
 import { hapticTap } from '../utils/haptics';
+import { isModuleEnabled } from '../utils/modules';
+import { shouldShowUserAttribution } from '../utils/userAttribution';
 
 const SWIPE_WIDTH = 120;
 
 function TransactionItem({ txn, currency = 'INR', onEdit, onDelete, onView }) {
+  const { settings } = useAuth();
+  const businessesEnabled = isModuleEnabled(settings, 'businesses');
+  const showUserAttribution = shouldShowUserAttribution(settings);
   const isAssetOpeningEntry =
     txn.type === 'asset' &&
     Boolean(txn.to_asset_type_id) &&
@@ -36,6 +42,10 @@ function TransactionItem({ txn, currency = 'INR', onEdit, onDelete, onView }) {
 
   const noteText = String(txn.note || '').trim();
   const hasNote = noteText.length > 0;
+  const businessText = String(txn.business_name || txn.business?.name || '').trim();
+  const hasBusiness = businessesEnabled && businessText.length > 0;
+  const enteredByText = String(txn.created_by_name || txn.created_by?.name || '').trim();
+  const hasEnteredBy = showUserAttribution && enteredByText.length > 0;
   const title =
     txn.type === 'opening_adjustment'
       ? 'Opening adjustment'
@@ -195,6 +205,16 @@ function TransactionItem({ txn, currency = 'INR', onEdit, onDelete, onView }) {
               <p className="truncate text-xs text-slate-600 dark:text-slate-300">{noteText}</p>
             ) : null}
             <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">{accountText}</p>
+            {hasBusiness ? (
+              <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
+                Business: {businessText}
+              </p>
+            ) : null}
+            {hasEnteredBy ? (
+              <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
+                Entered by: {enteredByText}
+              </p>
+            ) : null}
           </div>
           <div className="text-right">
             <p className={`text-sm font-extrabold ${amountTone}`}>{formatCurrency(txn.amount, currency)}</p>

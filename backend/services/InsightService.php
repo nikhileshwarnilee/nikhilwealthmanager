@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 final class InsightService
 {
-    public static function monthly(int $userId, string $month): array
+    public static function monthly(int $userId, string $month, array $allowedAccountIds = []): array
     {
         if ($month === 'all') {
-            return self::allTime($userId);
+            return self::allTime($userId, $allowedAccountIds);
         }
 
         $currentStart = $month . '-01 00:00:00';
@@ -18,17 +18,7 @@ final class InsightService
 
         $insights = [];
 
-        $totalsStmt = db()->prepare(
-            'SELECT
-                SUM(CASE WHEN type = \'income\' AND transaction_date BETWEEN :current_start_income AND :current_end_income THEN amount ELSE 0 END) AS current_income,
-                SUM(CASE WHEN type = \'income\' AND transaction_date BETWEEN :prev_start_income AND :prev_end_income THEN amount ELSE 0 END) AS prev_income,
-                SUM(CASE WHEN type = \'expense\' AND transaction_date BETWEEN :current_start_expense AND :current_end_expense THEN amount ELSE 0 END) AS current_expense,
-                SUM(CASE WHEN type = \'expense\' AND transaction_date BETWEEN :prev_start_expense AND :prev_end_expense THEN amount ELSE 0 END) AS prev_expense
-             FROM transactions
-             WHERE user_id = :user_id
-               AND is_deleted = 0'
-        );
-        $totalsStmt->execute([
+        $totalsParams = [
             ':user_id' => $userId,
             ':current_start_income' => $currentStart,
             ':current_end_income' => $currentEnd,
@@ -38,7 +28,25 @@ final class InsightService
             ':current_end_expense' => $currentEnd,
             ':prev_start_expense' => $previousStart,
             ':prev_end_expense' => $previousEnd,
-        ]);
+        ];
+        $totalsStmt = db()->prepare(
+            'SELECT
+                SUM(CASE WHEN type = \'income\' AND transaction_date BETWEEN :current_start_income AND :current_end_income THEN amount ELSE 0 END) AS current_income,
+                SUM(CASE WHEN type = \'income\' AND transaction_date BETWEEN :prev_start_income AND :prev_end_income THEN amount ELSE 0 END) AS prev_income,
+                SUM(CASE WHEN type = \'expense\' AND transaction_date BETWEEN :current_start_expense AND :current_end_expense THEN amount ELSE 0 END) AS current_expense,
+                SUM(CASE WHEN type = \'expense\' AND transaction_date BETWEEN :prev_start_expense AND :prev_end_expense THEN amount ELSE 0 END) AS prev_expense
+             FROM transactions
+             WHERE user_id = :user_id
+               AND is_deleted = 0'
+            . UserAccountAccessService::buildTransactionScopeSql(
+                'transactions',
+                $allowedAccountIds,
+                $totalsParams,
+                'insight_monthly_totals',
+                false
+            )
+        );
+        $totalsStmt->execute($totalsParams);
         $totals = $totalsStmt->fetch() ?: [];
 
         $currentIncome = (float) ($totals['current_income'] ?? 0);
@@ -64,7 +72,15 @@ final class InsightService
             ];
         }
 
-        $foodTrend = self::categoryTrend($userId, 'Food', $currentStart, $currentEnd, $previousStart, $previousEnd);
+        $foodTrend = self::categoryTrend(
+            $userId,
+            'Food',
+            $currentStart,
+            $currentEnd,
+            $previousStart,
+            $previousEnd,
+            $allowedAccountIds
+        );
         if ($foodTrend !== null && $foodTrend['previous'] > 0 && $foodTrend['current'] > $foodTrend['previous']) {
             $rise = round((($foodTrend['current'] - $foodTrend['previous']) / $foodTrend['previous']) * 100, 2);
             if ($rise >= 25) {
@@ -76,7 +92,7 @@ final class InsightService
             }
         }
 
-        $budgetAlerts = BudgetService::alerts($userId, $month);
+        $budgetAlerts = BudgetService::alerts($userId, $month, null, $allowedAccountIds);
         foreach ($budgetAlerts as $alert) {
             if ($alert['level'] === 'danger') {
                 $insights[] = [
@@ -87,6 +103,11 @@ final class InsightService
             }
         }
 
+        $topSpendParams = [
+            ':current_start' => $currentStart,
+            ':current_end' => $currentEnd,
+            ':user_id' => $userId,
+        ];
         $topSpendStmt = db()->prepare(
             'SELECT c.name AS category_name, COALESCE(SUM(t.amount), 0) AS total_spent
              FROM categories c
@@ -95,7 +116,14 @@ final class InsightService
               AND t.type = \'expense\'
               AND t.user_id = c.user_id
               AND t.is_deleted = 0
-              AND t.transaction_date BETWEEN :current_start AND :current_end
+              AND t.transaction_date BETWEEN :current_start AND :current_end'
+            . UserAccountAccessService::buildTransactionScopeSql(
+                't',
+                $allowedAccountIds,
+                $topSpendParams,
+                'insight_monthly_top_spend',
+                false
+            ) . '
              WHERE c.user_id = :user_id
                AND c.is_deleted = 0
                AND c.type = \'expense\'
@@ -103,11 +131,7 @@ final class InsightService
              ORDER BY total_spent DESC
              LIMIT 1'
         );
-        $topSpendStmt->execute([
-            ':current_start' => $currentStart,
-            ':current_end' => $currentEnd,
-            ':user_id' => $userId,
-        ]);
+        $topSpendStmt->execute($topSpendParams);
         $top = $topSpendStmt->fetch();
         if ($top && (float) $top['total_spent'] > 0) {
             $insights[] = [
@@ -132,8 +156,9 @@ final class InsightService
         return $insights;
     }
 
-    private static function allTime(int $userId): array
+    private static function allTime(int $userId, array $allowedAccountIds = []): array
     {
+        $params = [':user_id' => $userId];
         $stmt = db()->prepare(
             'SELECT
                 COALESCE(SUM(CASE WHEN type = \'income\' THEN amount ELSE 0 END), 0) AS income_total,
@@ -142,8 +167,15 @@ final class InsightService
              FROM transactions
              WHERE user_id = :user_id
                AND is_deleted = 0'
+            . UserAccountAccessService::buildTransactionScopeSql(
+                'transactions',
+                $allowedAccountIds,
+                $params,
+                'insight_all_time_totals',
+                false
+            )
         );
-        $stmt->execute([':user_id' => $userId]);
+        $stmt->execute($params);
         $row = $stmt->fetch() ?: ['income_total' => 0, 'expense_total' => 0, 'transaction_count' => 0];
 
         $income = (float) ($row['income_total'] ?? 0);
@@ -177,6 +209,7 @@ final class InsightService
             ),
         ];
 
+        $topSpendParams = [':user_id' => $userId];
         $topSpendStmt = db()->prepare(
             'SELECT c.name AS category_name, COALESCE(SUM(t.amount), 0) AS total_spent
              FROM categories c
@@ -184,7 +217,14 @@ final class InsightService
                ON t.category_id = c.id
               AND t.type = \'expense\'
               AND t.user_id = c.user_id
-              AND t.is_deleted = 0
+              AND t.is_deleted = 0'
+            . UserAccountAccessService::buildTransactionScopeSql(
+                't',
+                $allowedAccountIds,
+                $topSpendParams,
+                'insight_all_time_top_spend',
+                false
+            ) . '
              WHERE c.user_id = :user_id
                AND c.is_deleted = 0
                AND c.type = \'expense\'
@@ -192,7 +232,7 @@ final class InsightService
              ORDER BY total_spent DESC
              LIMIT 1'
         );
-        $topSpendStmt->execute([':user_id' => $userId]);
+        $topSpendStmt->execute($topSpendParams);
         $top = $topSpendStmt->fetch();
         if ($top && (float) $top['total_spent'] > 0) {
             $insights[] = [
@@ -206,7 +246,7 @@ final class InsightService
             ];
         }
 
-        $alerts = BudgetService::alerts($userId, 'all');
+        $alerts = BudgetService::alerts($userId, 'all', null, $allowedAccountIds);
         foreach ($alerts as $alert) {
             if ($alert['level'] === 'danger') {
                 $insights[] = [
@@ -226,8 +266,17 @@ final class InsightService
         string $currentStart,
         string $currentEnd,
         string $previousStart,
-        string $previousEnd
+        string $previousEnd,
+        array $allowedAccountIds = []
     ): ?array {
+        $params = [
+            ':user_id' => $userId,
+            ':category_name' => $categoryName,
+            ':current_start' => $currentStart,
+            ':current_end' => $currentEnd,
+            ':prev_start' => $previousStart,
+            ':prev_end' => $previousEnd,
+        ];
         $stmt = db()->prepare(
             'SELECT
                 SUM(CASE WHEN t.transaction_date BETWEEN :current_start AND :current_end THEN t.amount ELSE 0 END) AS current_total,
@@ -237,21 +286,21 @@ final class InsightService
                ON t.category_id = c.id
               AND t.type = \'expense\'
               AND t.user_id = c.user_id
-              AND t.is_deleted = 0
+              AND t.is_deleted = 0'
+            . UserAccountAccessService::buildTransactionScopeSql(
+                't',
+                $allowedAccountIds,
+                $params,
+                'insight_category_trend',
+                false
+            ) . '
              WHERE c.user_id = :user_id
                AND c.is_deleted = 0
                AND c.type = \'expense\'
                AND c.name = :category_name
              LIMIT 1'
         );
-        $stmt->execute([
-            ':user_id' => $userId,
-            ':category_name' => $categoryName,
-            ':current_start' => $currentStart,
-            ':current_end' => $currentEnd,
-            ':prev_start' => $previousStart,
-            ':prev_end' => $previousEnd,
-        ]);
+        $stmt->execute($params);
         $row = $stmt->fetch();
         if (!$row) {
             return null;

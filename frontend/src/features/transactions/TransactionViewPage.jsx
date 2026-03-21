@@ -3,16 +3,23 @@ import { useNavigate, useParams } from 'react-router-dom';
 import AppShell from '../../components/AppShell';
 import BottomSheet from '../../components/BottomSheet';
 import Icon, { assetIconKey, categoryIconKey } from '../../components/Icon';
+import { useAuth } from '../../app/AuthContext';
 import { useToast } from '../../app/ToastContext';
 import { normalizeApiError } from '../../services/http';
 import { deleteTransaction, fetchTransactionView } from '../../services/transactionService';
 import { formatCurrency, formatDateTime } from '../../utils/format';
+import { isModuleEnabled } from '../../utils/modules';
+import { canDeleteTransaction, canEditTransaction } from '../../utils/permissions';
+import { shouldShowUserAttribution } from '../../utils/userAttribution';
 
 export default function TransactionViewPage() {
   const navigate = useNavigate();
   const { id } = useParams();
   const transactionId = Number(id || 0);
+  const { user, settings } = useAuth();
   const { pushToast } = useToast();
+  const businessesEnabled = isModuleEnabled(settings, 'businesses');
+  const showUserAttribution = shouldShowUserAttribution(settings);
 
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
@@ -57,6 +64,32 @@ export default function TransactionViewPage() {
   const categoryColor = String(transaction?.category?.color || '').trim();
   const receiptExt = String(transaction?.receipt || '').split('.').pop()?.toLowerCase() || '';
   const isImageReceipt = ['jpg', 'jpeg', 'png'].includes(receiptExt);
+  const canEdit = canEditTransaction(user, transaction);
+  const canDelete = canDeleteTransaction(user, transaction);
+  const actionButtons = [
+    {
+      key: 'back',
+      label: 'Back',
+      className: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
+      onClick: () => navigate(-1)
+    },
+    ...(canEdit
+      ? [{
+          key: 'edit',
+          label: 'Edit',
+          className: 'bg-primary text-white',
+          onClick: () => navigate(`/transactions/${transaction.id}/edit`)
+        }]
+      : []),
+    ...(canDelete
+      ? [{
+          key: 'delete',
+          label: 'Delete',
+          className: 'bg-danger text-white',
+          onClick: () => setConfirmDelete(true)
+        }]
+      : [])
+  ];
 
   const onDelete = async () => {
     if (!transaction) return;
@@ -125,6 +158,14 @@ export default function TransactionViewPage() {
                 <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">Account</p>
                 <p className="mt-1 font-semibold text-slate-900 dark:text-slate-100">{transaction.account?.name || '-'}</p>
               </div>
+              {businessesEnabled ? (
+                <div className="rounded-lg bg-slate-100 p-2 dark:bg-slate-800">
+                  <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">Business</p>
+                  <p className="mt-1 font-semibold text-slate-900 dark:text-slate-100">
+                    {transaction.business?.name || '-'}
+                  </p>
+                </div>
+              ) : null}
               {transaction.type === 'asset' ? (
                 <div className="rounded-lg bg-slate-100 p-2 dark:bg-slate-800">
                   <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">Asset</p>
@@ -137,6 +178,14 @@ export default function TransactionViewPage() {
                 <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">Date</p>
                 <p className="mt-1 font-semibold text-slate-900 dark:text-slate-100">{formatDateTime(transaction.date)}</p>
               </div>
+              {showUserAttribution ? (
+                <div className="rounded-lg bg-slate-100 p-2 dark:bg-slate-800">
+                  <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">Entered By</p>
+                  <p className="mt-1 font-semibold text-slate-900 dark:text-slate-100">
+                    {transaction.created_by?.name || '-'}
+                  </p>
+                </div>
+              ) : null}
               <div className="rounded-lg bg-slate-100 p-2 dark:bg-slate-800">
                 <p className="text-[10px] uppercase text-slate-500 dark:text-slate-400">Tags</p>
                 <p className="mt-1 font-semibold text-slate-900 dark:text-slate-100">
@@ -191,28 +240,20 @@ export default function TransactionViewPage() {
             </div>
           </section>
 
-          <section className="mt-auto grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200"
-              onClick={() => navigate(-1)}
-            >
-              Back
-            </button>
-            <button
-              type="button"
-              className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-white"
-              onClick={() => navigate(`/transactions/${transaction.id}/edit`)}
-            >
-              Edit
-            </button>
-            <button
-              type="button"
-              className="rounded-xl bg-danger px-3 py-2 text-xs font-semibold text-white"
-              onClick={() => setConfirmDelete(true)}
-            >
-              Delete
-            </button>
+          <section
+            className="mt-auto grid gap-2"
+            style={{ gridTemplateColumns: `repeat(${actionButtons.length}, minmax(0, 1fr))` }}
+          >
+            {actionButtons.map((action) => (
+              <button
+                key={action.key}
+                type="button"
+                className={`rounded-xl px-3 py-2 text-xs font-semibold ${action.className}`}
+                onClick={action.onClick}
+              >
+                {action.label}
+              </button>
+            ))}
           </section>
         </div>
       ) : (

@@ -6,12 +6,15 @@ require_once dirname(__DIR__, 2) . '/bootstrap.php';
 
 Request::enforceMethod('GET');
 $user = AuthMiddleware::user();
-$userId = (int) $user['id'];
+$userId = AuthService::workspaceOwnerId($user);
+$allowedAccountIds = UserAccountAccessService::allowedAccountIds($user);
 $categoryId = Validator::positiveInt(Request::query('category_id', 0), 'category_id');
 $month = trim((string) Request::query('month', date('Y-m')));
 $dateFromRaw = trim((string) Request::query('date_from', ''));
 $dateToRaw = trim((string) Request::query('date_to', ''));
 $type = Validator::enum(Request::query('type', 'expense'), ['income', 'expense'], 'type');
+$businessId = Validator::nullablePositiveInt(Request::query('business_id', ''));
+$createdByUserId = WorkspaceUserService::resolveTransactionCreatorFilter($user, Request::query('created_by_user_id', ''));
 
 $month = $month === '' ? date('Y-m') : $month;
 $useCustomRange = $dateFromRaw !== '' || $dateToRaw !== '';
@@ -22,6 +25,10 @@ $dateFilter = '';
 $dateParams = [];
 $rangeStart = null;
 $rangeEnd = null;
+$businessFilter = '';
+$businessParams = [];
+$createdByFilter = '';
+$createdByParams = [];
 
 if ($useCustomRange) {
     if ($dateFromRaw === '' || $dateToRaw === '') {
@@ -47,6 +54,16 @@ if ($useCustomRange) {
     $dateFilter = ' AND transaction_date BETWEEN :start_date AND :end_date';
     $dateParams[':start_date'] = $rangeStart;
     $dateParams[':end_date'] = $rangeEnd;
+}
+
+if ($businessId !== null) {
+    $businessFilter = ' AND business_id = :business_id';
+    $businessParams[':business_id'] = $businessId;
+}
+
+if ($createdByUserId !== null) {
+    $createdByFilter = ' AND created_by_user_id = :created_by_user_id';
+    $createdByParams[':created_by_user_id'] = $createdByUserId;
 }
 
 $categoryStmt = db()->prepare(
@@ -77,13 +94,21 @@ $summarySql = 'SELECT
      WHERE user_id = :user_id
        AND is_deleted = 0
        AND category_id = :category_id
-       AND type = :type' . $dateFilter;
-$summaryStmt = db()->prepare($summarySql);
-$summaryStmt->execute(array_merge([
+       AND type = :type';
+$summaryParams = [
     ':user_id' => $userId,
     ':category_id' => $categoryId,
     ':type' => $type,
-], $dateParams));
+];
+$summarySql .= UserAccountAccessService::buildTransactionScopeSql(
+    'transactions',
+    $allowedAccountIds,
+    $summaryParams,
+    'report_category_breakdown_summary',
+    false
+) . $dateFilter . $businessFilter . $createdByFilter;
+$summaryStmt = db()->prepare($summarySql);
+$summaryStmt->execute(array_merge($summaryParams, $dateParams, $businessParams, $createdByParams));
 $summary = $summaryStmt->fetch() ?: ['total_amount' => 0, 'transaction_count' => 0, 'avg_amount' => 0];
 
 $dailySql = 'SELECT
@@ -94,15 +119,23 @@ $dailySql = 'SELECT
      WHERE user_id = :user_id
        AND is_deleted = 0
        AND category_id = :category_id
-       AND type = :type' . $dateFilter . '
-     GROUP BY DATE(transaction_date)
-     ORDER BY day ASC';
-$dailyStmt = db()->prepare($dailySql);
-$dailyStmt->execute(array_merge([
+       AND type = :type';
+$dailyParams = [
     ':user_id' => $userId,
     ':category_id' => $categoryId,
     ':type' => $type,
-], $dateParams));
+];
+$dailySql .= UserAccountAccessService::buildTransactionScopeSql(
+    'transactions',
+    $allowedAccountIds,
+    $dailyParams,
+    'report_category_breakdown_daily',
+    false
+) . $dateFilter . $businessFilter . $createdByFilter . '
+     GROUP BY DATE(transaction_date)
+     ORDER BY day ASC';
+$dailyStmt = db()->prepare($dailySql);
+$dailyStmt->execute(array_merge($dailyParams, $dateParams, $businessParams, $createdByParams));
 $dailyRows = $dailyStmt->fetchAll();
 
 $dailyBreakdown = [];
@@ -225,8 +258,12 @@ $biggestSql = 'SELECT
         t.amount,
         t.note,
         t.transaction_date,
+        t.business_id,
+        t.created_by_user_id,
         fa.name AS from_account_name,
-        ta.name AS to_account_name
+        ta.name AS to_account_name,
+        b.name AS business_name,
+        creator.name AS created_by_name
      FROM transactions t
      LEFT JOIN accounts fa
        ON fa.id = t.from_account_id
@@ -236,18 +273,32 @@ $biggestSql = 'SELECT
        ON ta.id = t.to_account_id
       AND ta.user_id = t.user_id
       AND ta.is_deleted = 0
+     LEFT JOIN businesses b
+       ON b.id = t.business_id
+      AND b.user_id = t.user_id
+      AND b.is_deleted = 0
+     LEFT JOIN users creator
+       ON creator.id = t.created_by_user_id
      WHERE t.user_id = :user_id
        AND t.is_deleted = 0
        AND t.category_id = :category_id
-       AND t.type = :type' . $dateFilter . '
-     ORDER BY t.amount DESC, t.transaction_date DESC, t.id DESC
-     LIMIT 1';
-$biggestStmt = db()->prepare($biggestSql);
-$biggestStmt->execute(array_merge([
+       AND t.type = :type';
+$biggestParams = [
     ':user_id' => $userId,
     ':category_id' => $categoryId,
     ':type' => $type,
-], $dateParams));
+];
+$biggestSql .= UserAccountAccessService::buildTransactionScopeSql(
+    't',
+    $allowedAccountIds,
+    $biggestParams,
+    'report_category_breakdown_biggest',
+    false
+) . $dateFilter . $businessFilter . $createdByFilter . '
+     ORDER BY t.amount DESC, t.transaction_date DESC, t.id DESC
+     LIMIT 1';
+$biggestStmt = db()->prepare($biggestSql);
+$biggestStmt->execute(array_merge($biggestParams, $dateParams, $businessParams, $createdByParams));
 $biggestRow = $biggestStmt->fetch();
 
 $transactionsSql = 'SELECT
@@ -258,8 +309,12 @@ $transactionsSql = 'SELECT
         t.location,
         t.receipt_path,
         t.transaction_date,
+        t.business_id,
+        t.created_by_user_id,
         fa.name AS from_account_name,
         ta.name AS to_account_name,
+        b.name AS business_name,
+        creator.name AS created_by_name,
         c.name AS category_name,
         c.icon AS category_icon,
         c.color AS category_color,
@@ -273,6 +328,12 @@ $transactionsSql = 'SELECT
        ON ta.id = t.to_account_id
       AND ta.user_id = t.user_id
       AND ta.is_deleted = 0
+     LEFT JOIN businesses b
+       ON b.id = t.business_id
+      AND b.user_id = t.user_id
+      AND b.is_deleted = 0
+     LEFT JOIN users creator
+       ON creator.id = t.created_by_user_id
      INNER JOIN categories c
        ON c.id = t.category_id
       AND c.user_id = t.user_id
@@ -280,14 +341,22 @@ $transactionsSql = 'SELECT
      WHERE t.user_id = :user_id
        AND t.is_deleted = 0
        AND t.category_id = :category_id
-       AND t.type = :type' . $dateFilter . '
-     ORDER BY t.transaction_date DESC, t.id DESC';
-$transactionsStmt = db()->prepare($transactionsSql);
-$transactionsStmt->execute(array_merge([
+       AND t.type = :type';
+$transactionsParams = [
     ':user_id' => $userId,
     ':category_id' => $categoryId,
     ':type' => $type,
-], $dateParams));
+];
+$transactionsSql .= UserAccountAccessService::buildTransactionScopeSql(
+    't',
+    $allowedAccountIds,
+    $transactionsParams,
+    'report_category_breakdown_transactions',
+    false
+) . $dateFilter . $businessFilter . $createdByFilter . '
+     ORDER BY t.transaction_date DESC, t.id DESC';
+$transactionsStmt = db()->prepare($transactionsSql);
+$transactionsStmt->execute(array_merge($transactionsParams, $dateParams, $businessParams, $createdByParams));
 $transactions = $transactionsStmt->fetchAll();
 
 $formattedTransactions = [];
@@ -304,8 +373,11 @@ if ($biggestRow) {
         'amount' => (float) $biggestRow['amount'],
         'note' => $biggestRow['note'] !== null ? (string) $biggestRow['note'] : null,
         'transaction_date' => (string) $biggestRow['transaction_date'],
+        'business_id' => $biggestRow['business_id'] !== null ? (int) $biggestRow['business_id'] : null,
+        'business_name' => $biggestRow['business_name'] !== null ? (string) $biggestRow['business_name'] : null,
         'from_account_name' => $biggestRow['from_account_name'] !== null ? (string) $biggestRow['from_account_name'] : null,
         'to_account_name' => $biggestRow['to_account_name'] !== null ? (string) $biggestRow['to_account_name'] : null,
+        'created_by_name' => $biggestRow['created_by_name'] !== null ? (string) $biggestRow['created_by_name'] : null,
     ];
 }
 
@@ -318,6 +390,8 @@ Response::success('Category breakdown fetched.', [
     'date_from' => $rangeStart !== null ? date('Y-m-d', strtotime($rangeStart)) : null,
     'date_to' => $rangeEnd !== null ? date('Y-m-d', strtotime($rangeEnd)) : null,
     'type' => $type,
+    'business_id' => $businessId,
+    'created_by_user_id' => $createdByUserId,
     'category' => [
         'id' => (int) $category['id'],
         'name' => (string) $category['name'],

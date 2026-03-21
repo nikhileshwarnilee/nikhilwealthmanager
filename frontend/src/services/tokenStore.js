@@ -1,7 +1,8 @@
 let authSessionCache = {
   accessToken: null,
   refreshToken: null,
-  user: null
+  user: null,
+  settings: null
 };
 
 function normalizeSession(session) {
@@ -9,7 +10,8 @@ function normalizeSession(session) {
   return {
     accessToken: raw.accessToken || null,
     refreshToken: raw.refreshToken || null,
-    user: raw.user || null
+    user: raw.user || null,
+    settings: raw.settings || null
   };
 }
 
@@ -25,7 +27,8 @@ export function clearAuthSession() {
   authSessionCache = {
     accessToken: null,
     refreshToken: null,
-    user: null
+    user: null,
+    settings: null
   };
 }
 

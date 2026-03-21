@@ -1,19 +1,32 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useNavigationType } from 'react-router-dom';
 import AppShell from '../../components/AppShell';
+import BusinessStripSelector from '../../components/BusinessStripSelector';
 import CollapsibleIntervalSection from '../../components/CollapsibleIntervalSection';
 import EmptyState from '../../components/EmptyState';
 import HorizontalSelector from '../../components/HorizontalSelector';
 import Icon from '../../components/Icon';
+import ReportExportSheet from '../../components/ReportExportSheet';
 import TransactionItem from '../../components/TransactionItem';
+import UserStripSelector from '../../components/UserStripSelector';
+import { useAuth } from '../../app/AuthContext';
 import { useToast } from '../../app/ToastContext';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useInfiniteScroll } from '../../hooks/useInfiniteScroll';
 import { usePaginatedTransactions } from '../../hooks/usePaginatedTransactions';
 import { useRouteState } from '../../hooks/useRouteState';
+import { useWorkspaceUsers } from '../../hooks/useWorkspaceUsers';
 import { fetchAccounts } from '../../services/accountService';
+import { fetchBusinesses } from '../../services/businessService';
 import { normalizeApiError } from '../../services/http';
-import { exportTransactionsToCsv } from '../../utils/csv';
+import {
+  buildTransactionReportDefinition,
+  exportReportDefinition,
+  fetchTransactionsForExport,
+  formatReportDateRange,
+  reportDateRangeFromInterval,
+  validateReportDateRange
+} from '../../utils/reportExport';
 import {
   createDefaultIntervalState,
   intervalDateRange,
@@ -21,6 +34,8 @@ import {
   intervalToQueryParams,
   shiftIntervalState
 } from '../../utils/intervals';
+import { isModuleEnabled } from '../../utils/modules';
+import { shouldShowUserAttribution } from '../../utils/userAttribution';
 
 const typeOptions = [
   { value: '', label: 'All', icon: 'transactions' },
@@ -68,17 +83,30 @@ function AccountStripSelector({ items, selected, onSelect }) {
 export default function TransactionsPage() {
   const navigate = useNavigate();
   const navigationType = useNavigationType();
+  const { settings } = useAuth();
   const { pushToast } = useToast();
+  const businessesEnabled = isModuleEnabled(settings, 'businesses');
+  const assetsEnabled = isModuleEnabled(settings, 'assets');
+  const showUserAttribution = shouldShowUserAttribution(settings);
   const [searchOpen, setSearchOpen] = useRouteState('transactions-search-open', false);
   const [searchTerm, setSearchTerm] = useRouteState('transactions-search-term', '');
   const [interval, setInterval] = useRouteState('transactions-interval', () => createDefaultIntervalState());
   const [type, setType] = useRouteState('transactions-type-filter', '');
   const [accountId, setAccountId] = useRouteState('transactions-account-filter', '');
+  const [businessId, setBusinessId] = useRouteState('transactions-business-filter', '');
+  const [createdByUserId, setCreatedByUserId] = useRouteState('transactions-user-filter', '');
   const [accounts, setAccounts] = useState([]);
+  const [businesses, setBusinesses] = useState([]);
   const [accountsLoaded, setAccountsLoaded] = useState(false);
+  const [businessesLoaded, setBusinessesLoaded] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const loadMoreRef = useRef(null);
   const initializedRef = useRef(false);
-  const allowedTypeValues = useMemo(() => new Set(typeOptions.map((option) => String(option.value))), []);
+  const visibleTypeOptions = useMemo(
+    () => (assetsEnabled ? typeOptions : typeOptions.filter((option) => option.value !== 'asset')),
+    [assetsEnabled]
+  );
+  const allowedTypeValues = useMemo(() => new Set(visibleTypeOptions.map((option) => String(option.value))), [visibleTypeOptions]);
   const normalizedType = allowedTypeValues.has(String(type)) ? String(type) : '';
   const normalizedAccountId = useMemo(() => {
     const raw = String(accountId || '').trim();
@@ -86,6 +114,21 @@ export default function TransactionsPage() {
     if (!accountsLoaded) return raw;
     return accounts.some((account) => String(account.id) === raw) ? raw : '';
   }, [accountId, accounts, accountsLoaded]);
+  const normalizedBusinessId = useMemo(() => {
+    if (!businessesEnabled) return '';
+    const raw = String(businessId || '').trim();
+    if (!raw) return '';
+    if (!businessesLoaded) return raw;
+    return businesses.some((business) => String(business.id) === raw) ? raw : '';
+  }, [businessId, businesses, businessesEnabled, businessesLoaded]);
+  const { users: workspaceUsers, loading: workspaceUsersLoading } = useWorkspaceUsers(showUserAttribution);
+  const normalizedCreatedByUserId = useMemo(() => {
+    if (!showUserAttribution) return '';
+    const raw = String(createdByUserId || '').trim();
+    if (!raw) return '';
+    if (workspaceUsersLoading) return raw;
+    return workspaceUsers.some((workspaceUser) => String(workspaceUser.id) === raw) ? raw : '';
+  }, [createdByUserId, showUserAttribution, workspaceUsers, workspaceUsersLoading]);
 
   const debouncedSearch = useDebounce(searchTerm, 300);
   const normalizedSearch = debouncedSearch.trim();
@@ -114,6 +157,22 @@ export default function TransactionsPage() {
       setAccountsLoaded(true);
     }
   }, [pushToast]);
+  const loadBusinesses = useCallback(async () => {
+    if (!businessesEnabled) {
+      setBusinesses([]);
+      setBusinessesLoaded(true);
+      return;
+    }
+    setBusinessesLoaded(false);
+    try {
+      const response = await fetchBusinesses();
+      setBusinesses(response.businesses || []);
+    } catch (error) {
+      pushToast({ type: 'danger', message: normalizeApiError(error) });
+    } finally {
+      setBusinessesLoaded(true);
+    }
+  }, [businessesEnabled, pushToast]);
 
   useEffect(() => {
     if (initializedRef.current) return;
@@ -125,9 +184,11 @@ export default function TransactionsPage() {
     setInterval(createDefaultIntervalState());
     setType('');
     setAccountId('');
+    setBusinessId('');
+    setCreatedByUserId('');
     setSearchTerm('');
     setSearchOpen(false);
-  }, [navigationType, setAccountId, setInterval, setSearchOpen, setSearchTerm, setType]);
+  }, [navigationType, setAccountId, setBusinessId, setCreatedByUserId, setInterval, setSearchOpen, setSearchTerm, setType]);
 
   useEffect(() => {
     if (String(type) !== normalizedType) {
@@ -141,15 +202,39 @@ export default function TransactionsPage() {
       setAccountId('');
     }
   }, [accountId, accountsLoaded, normalizedAccountId, setAccountId]);
+  useEffect(() => {
+    const raw = String(businessId || '').trim();
+    if (businessesLoaded && raw && normalizedBusinessId === '') {
+      setBusinessId('');
+    }
+  }, [businessId, businessesLoaded, normalizedBusinessId, setBusinessId]);
+  useEffect(() => {
+    if (!businessesEnabled && String(businessId || '').trim() !== '') {
+      setBusinessId('');
+    }
+  }, [businessId, businessesEnabled, setBusinessId]);
+  useEffect(() => {
+    const raw = String(createdByUserId || '').trim();
+    if (showUserAttribution && !workspaceUsersLoading && raw && normalizedCreatedByUserId === '') {
+      setCreatedByUserId('');
+    }
+  }, [createdByUserId, normalizedCreatedByUserId, setCreatedByUserId, showUserAttribution, workspaceUsersLoading]);
+  useEffect(() => {
+    if (!showUserAttribution && String(createdByUserId || '').trim() !== '') {
+      setCreatedByUserId('');
+    }
+  }, [createdByUserId, setCreatedByUserId, showUserAttribution]);
 
   const transactionQuery = useMemo(
     () => ({
       ...(normalizedSearch ? {} : (intervalDateRange(interval) || {})),
       type: normalizedType,
       account_id: normalizedAccountId,
+      business_id: businessesEnabled ? normalizedBusinessId : '',
+      created_by_user_id: showUserAttribution ? normalizedCreatedByUserId : '',
       search: normalizedSearch
     }),
-    [interval, normalizedAccountId, normalizedSearch, normalizedType]
+    [businessesEnabled, interval, normalizedAccountId, normalizedBusinessId, normalizedCreatedByUserId, normalizedSearch, normalizedType, showUserAttribution]
   );
 
   const onTransactionError = useCallback(
@@ -174,11 +259,25 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     loadAccounts();
-  }, [loadAccounts]);
+    loadBusinesses();
+  }, [loadAccounts, loadBusinesses]);
 
   useInfiniteScroll(loadMoreRef, loadMore, hasMore && !loading && !loadingMore);
 
   const filteredTransactions = transactions;
+  const defaultExportRange = useMemo(() => reportDateRangeFromInterval(interval), [interval]);
+  const selectedAccount = useMemo(
+    () => accounts.find((account) => String(account.id) === normalizedAccountId) || null,
+    [accounts, normalizedAccountId]
+  );
+  const selectedBusiness = useMemo(
+    () => businesses.find((business) => String(business.id) === normalizedBusinessId) || null,
+    [businesses, normalizedBusinessId]
+  );
+  const selectedWorkspaceUser = useMemo(
+    () => workspaceUsers.find((workspaceUser) => String(workspaceUser.id) === normalizedCreatedByUserId) || null,
+    [normalizedCreatedByUserId, workspaceUsers]
+  );
 
   const historyHref = useMemo(() => {
     const query = new URLSearchParams(intervalToQueryParams(interval));
@@ -190,6 +289,60 @@ export default function TransactionsPage() {
   const onSwipeNextInterval = useCallback(() => {
     setInterval((prev) => shiftIntervalState(prev, 1));
   }, []);
+  const onGenerateReport = useCallback(
+    async ({ format, fromDate, toDate }) => {
+      try {
+        const range = validateReportDateRange({ fromDate, toDate });
+        const reportTransactions = await fetchTransactionsForExport(
+          {
+            type: normalizedType,
+            account_id: normalizedAccountId,
+            business_id: businessesEnabled ? normalizedBusinessId : '',
+            created_by_user_id: showUserAttribution ? normalizedCreatedByUserId : ''
+          },
+          range,
+          normalizedSearch
+        );
+
+        const definition = buildTransactionReportDefinition({
+          title: 'Transactions Report',
+          subtitle: 'Filtered transactions report',
+          fileName: 'transactions-report',
+          dateRangeLabel: formatReportDateRange(range.fromDate, range.toDate),
+          transactions: reportTransactions,
+          includeBusiness: businessesEnabled,
+          includeCreatedBy: showUserAttribution,
+          meta: [
+            { label: 'Interval', value: intervalLabel },
+            { label: 'Type', value: normalizedType || 'All' },
+            { label: 'Account', value: selectedAccount?.name || 'All accounts' },
+            { label: 'Business', value: businessesEnabled ? (selectedBusiness?.name || 'All businesses') : 'Businesses module off' },
+            { label: 'User', value: showUserAttribution ? (selectedWorkspaceUser?.name || 'All users') : 'Single-user workspace' },
+            { label: 'Search', value: normalizedSearch || 'None' }
+          ]
+        });
+
+        await exportReportDefinition(format, definition);
+        pushToast({ type: 'success', message: `${format.toUpperCase()} report generated.` });
+      } catch (error) {
+        pushToast({ type: 'danger', message: error?.message || normalizeApiError(error) });
+      }
+    },
+    [
+      businessesEnabled,
+      intervalLabel,
+      normalizedBusinessId,
+      normalizedCreatedByUserId,
+      normalizedSearch,
+      normalizedType,
+      normalizedAccountId,
+      pushToast,
+      selectedAccount?.name,
+      selectedBusiness?.name,
+      selectedWorkspaceUser?.name,
+      showUserAttribution
+    ]
+  );
 
   return (
     <AppShell
@@ -202,7 +355,7 @@ export default function TransactionsPage() {
       onToggleSearch={() => setSearchOpen((prev) => !prev)}
       onSearchChange={setSearchTerm}
       searchPlaceholder="Search all transactions"
-      onExport={() => exportTransactionsToCsv(filteredTransactions)}
+      onExport={() => setExportOpen(true)}
       intervalSwipeEnabled={interval.mode !== 'all_time'}
       onIntervalSwipePrev={onSwipePrevInterval}
       onIntervalSwipeNext={onSwipeNextInterval}
@@ -214,7 +367,7 @@ export default function TransactionsPage() {
         <div>
           <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Type</p>
           <HorizontalSelector
-            items={typeOptions}
+            items={visibleTypeOptions}
             selected={normalizedType}
             onSelect={setType}
             iconKey={(item) => item.icon}
@@ -225,6 +378,30 @@ export default function TransactionsPage() {
           <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Account</p>
           <AccountStripSelector items={accountOptions} selected={normalizedAccountId} onSelect={setAccountId} />
         </div>
+
+        {businessesEnabled ? (
+          <div>
+            <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Business</p>
+            <BusinessStripSelector
+              businesses={businesses}
+              selected={normalizedBusinessId}
+              onSelect={setBusinessId}
+              emptyLabel="All businesses"
+            />
+          </div>
+        ) : null}
+
+        {showUserAttribution ? (
+          <div>
+            <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">User</p>
+            <UserStripSelector
+              users={workspaceUsers}
+              selected={normalizedCreatedByUserId}
+              onSelect={setCreatedByUserId}
+              emptyLabel="All users"
+            />
+          </div>
+        ) : null}
 
         <div className="grid grid-cols-2 gap-2">
           <Link
@@ -291,6 +468,15 @@ export default function TransactionsPage() {
           <p className="mt-2 text-center text-[11px] text-slate-500 dark:text-slate-400">Scroll for more</p>
         ) : null}
       </section>
+
+      <ReportExportSheet
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title="Transactions Report"
+        subtitle="Generate a professional PDF, Excel, or CSV report"
+        defaultRange={defaultExportRange}
+        onGenerate={onGenerateReport}
+      />
     </AppShell>
   );
 }

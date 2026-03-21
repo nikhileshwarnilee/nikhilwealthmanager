@@ -8,7 +8,8 @@ RateLimitMiddleware::enforce('accounts_adjust_opening', 120, 600);
 Request::enforceMethod('POST');
 
 $user = AuthMiddleware::user();
-$userId = (int) $user['id'];
+$userId = AuthService::workspaceOwnerId($user);
+$allowedAccountIds = UserAccountAccessService::allowedAccountIds($user);
 $input = Request::body();
 
 $accountId = Validator::positiveInt($input['account_id'] ?? 0, 'account_id');
@@ -16,6 +17,10 @@ if (!is_numeric($input['new_initial_balance'] ?? null)) {
     Response::error('new_initial_balance must be numeric.', 422);
 }
 $newInitialBalance = round((float) $input['new_initial_balance'], 2);
+
+if ($allowedAccountIds !== []) {
+    UserAccountAccessService::assertAllowedAccount($accountId, $allowedAccountIds);
+}
 
 $pdo = db();
 $pdo->beginTransaction();

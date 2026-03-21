@@ -9,6 +9,8 @@ import { changePassword, updateProfile } from '../../services/authService';
 import { normalizeApiError } from '../../services/http';
 import { getSettings, updateSettings } from '../../services/settingsService';
 import { hapticTap } from '../../utils/haptics';
+import { isModuleEnabled } from '../../utils/modules';
+import { canManageUsers, hasFeatureAccess } from '../../utils/permissions';
 
 const currencyOptions = [
   { value: 'INR', label: 'INR (Rs)' },
@@ -23,7 +25,7 @@ const initialPasswordForm = {
 };
 
 export default function SettingsPage() {
-  const { user, setUser, logout } = useAuth();
+  const { user, settings, setUser, setSettings, logout } = useAuth();
   const { darkMode, setDarkMode } = useTheme();
   const { pushToast } = useToast();
 
@@ -38,11 +40,18 @@ export default function SettingsPage() {
     current_password: ''
   });
   const [passwordForm, setPasswordForm] = useState(initialPasswordForm);
+  const businessesEnabled = isModuleEnabled(settings, 'businesses');
+  const assetsEnabled = isModuleEnabled(settings, 'assets');
+  const usersAccessEnabled = Boolean(settings?.workspace_users_access_enabled);
+  const categoriesEnabled = hasFeatureAccess(user, 'categories');
+  const budgetsEnabled = hasFeatureAccess(user, 'budgets');
+  const canEditUsers = canManageUsers(user) && usersAccessEnabled;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const response = await getSettings();
+      setSettings(response.settings || null);
       setCurrency(response.settings?.currency || 'INR');
       const remoteDark = Boolean(Number(response.settings?.dark_mode || 0));
       setDarkMode(remoteDark);
@@ -68,10 +77,11 @@ export default function SettingsPage() {
   const savePreferences = async (overrides = {}) => {
     setSavingPrefs(true);
     try {
-      await updateSettings({
+      const response = await updateSettings({
         currency: overrides.currency ?? currency,
         dark_mode: overrides.dark_mode ?? darkMode
       });
+      setSettings(response.settings || null);
       pushToast({ type: 'success', message: 'Preferences updated.' });
     } catch (error) {
       pushToast({ type: 'danger', message: normalizeApiError(error) });
@@ -305,29 +315,51 @@ export default function SettingsPage() {
           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Manage Data</h3>
           <div className="mt-2 grid grid-cols-2 gap-2">
             <Link
-              to="/accounts"
+              to="/settings/modules"
               className="rounded-xl bg-slate-100 px-3 py-3 text-center text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200"
             >
-              Accounts
+              Modules
             </Link>
-            <Link
-              to="/categories"
-              className="rounded-xl bg-slate-100 px-3 py-3 text-center text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200"
-            >
-              Categories
-            </Link>
-            <Link
-              to="/assets"
-              className="rounded-xl bg-slate-100 px-3 py-3 text-center text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200"
-            >
-              Assets / Wealth
-            </Link>
-            <Link
-              to="/assets/types"
-              className="rounded-xl bg-slate-100 px-3 py-3 text-center text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200"
-            >
-              Asset Types
-            </Link>
+            {categoriesEnabled ? (
+              <Link
+                to="/categories"
+                className="rounded-xl bg-slate-100 px-3 py-3 text-center text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              >
+                Categories
+              </Link>
+            ) : null}
+            {budgetsEnabled ? (
+              <Link
+                to="/budgets"
+                className="rounded-xl bg-slate-100 px-3 py-3 text-center text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              >
+                Budgets
+              </Link>
+            ) : null}
+            {businessesEnabled ? (
+              <Link
+                to="/businesses"
+                className="rounded-xl bg-slate-100 px-3 py-3 text-center text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              >
+                Businesses
+              </Link>
+            ) : null}
+            {assetsEnabled ? (
+              <Link
+                to="/assets/types"
+                className="rounded-xl bg-slate-100 px-3 py-3 text-center text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              >
+                Asset Types
+              </Link>
+            ) : null}
+            {canEditUsers ? (
+              <Link
+                to="/settings/users"
+                className="rounded-xl bg-slate-100 px-3 py-3 text-center text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              >
+                Users & Access
+              </Link>
+            ) : null}
             <button
               type="button"
               className="col-span-2 rounded-xl bg-danger px-3 py-3 text-sm font-semibold text-white"

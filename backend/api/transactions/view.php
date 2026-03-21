@@ -6,7 +6,8 @@ require_once dirname(__DIR__, 2) . '/bootstrap.php';
 
 Request::enforceMethod('GET');
 $user = AuthMiddleware::user();
-$userId = (int) $user['id'];
+$userId = AuthService::workspaceOwnerId($user);
+$allowedAccountIds = UserAccountAccessService::allowedAccountIds($user);
 $id = Validator::positiveInt(Request::query('id', 0), 'id');
 
 $stmt = db()->prepare(
@@ -14,6 +15,7 @@ $stmt = db()->prepare(
         t.id,
         t.type,
         t.amount,
+        t.created_by_user_id,
         t.reference_type,
         t.reference_id,
         t.note,
@@ -22,17 +24,20 @@ $stmt = db()->prepare(
         t.transaction_date,
         t.created_at,
         t.updated_at,
+        creator.name AS created_by_name,
         t.from_account_id,
         t.to_account_id,
         t.from_asset_type_id,
         t.to_asset_type_id,
         t.category_id,
+        t.business_id,
         fa.name AS from_account_name,
         ta.name AS to_account_name,
         fas.name AS from_asset_type_name,
         fas.icon AS from_asset_type_icon,
         tas.name AS to_asset_type_name,
         tas.icon AS to_asset_type_icon,
+        b.name AS business_name,
         c.name AS category_name,
         c.icon AS category_icon,
         c.color AS category_color,
@@ -54,10 +59,16 @@ $stmt = db()->prepare(
        ON tas.id = t.to_asset_type_id
       AND tas.user_id = t.user_id
       AND tas.is_deleted = 0
+     LEFT JOIN businesses b
+       ON b.id = t.business_id
+      AND b.user_id = t.user_id
+      AND b.is_deleted = 0
      LEFT JOIN categories c
        ON c.id = t.category_id
       AND c.user_id = t.user_id
       AND c.is_deleted = 0
+     LEFT JOIN users creator
+       ON creator.id = t.created_by_user_id
      WHERE t.id = :id
        AND t.user_id = :user_id
        AND t.is_deleted = 0
@@ -72,6 +83,12 @@ $row = $stmt->fetch();
 if (!$row) {
     Response::error('Transaction not found.', 404);
 }
+
+if (!UserAccountAccessService::transactionRowAllowed($row, $allowedAccountIds)) {
+    Response::error('Transaction not found.', 404);
+}
+
+$mutationAccess = TransactionService::mutationAccessSummary($row, $user);
 
 $receiptPath = $row['receipt_path'] ?: null;
 $receiptUrl = null;
@@ -117,6 +134,10 @@ Response::success('Transaction view fetched.', [
             'color' => $row['category_color'] ?: null,
             'type' => $row['category_type'] ?: null,
         ],
+        'business' => [
+            'id' => $row['business_id'] !== null ? (int) $row['business_id'] : null,
+            'name' => $row['business_name'] ?: null,
+        ],
         'account' => [
             'name' => $accountName,
             'from' => [
@@ -139,6 +160,11 @@ Response::success('Transaction view fetched.', [
             ],
         ],
         'date' => (string) $row['transaction_date'],
+        'created_by' => [
+            'id' => $row['created_by_user_id'] !== null ? (int) $row['created_by_user_id'] : null,
+            'name' => $row['created_by_name'] ?: null,
+        ],
+        'permissions' => $mutationAccess,
         'note' => $row['note'] ?: null,
         'tags' => [],
         'location' => $row['location'] ?: null,

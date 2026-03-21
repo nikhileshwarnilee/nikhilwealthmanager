@@ -6,7 +6,7 @@ require_once dirname(__DIR__, 2) . '/bootstrap.php';
 
 Request::enforceMethod('GET');
 $user = AuthMiddleware::user();
-$userId = (int) $user['id'];
+$userId = AuthService::workspaceOwnerId($user);
 
 $month = trim((string) Request::query('month', date('Y-m')));
 $dateFromRaw = trim((string) Request::query('date_from', ''));

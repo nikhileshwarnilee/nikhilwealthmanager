@@ -6,8 +6,11 @@ require_once dirname(__DIR__, 2) . '/bootstrap.php';
 
 Request::enforceMethod('GET');
 $user = AuthMiddleware::user();
-$userId = (int) $user['id'];
+$userId = AuthService::workspaceOwnerId($user);
+$allowedAccountIds = UserAccountAccessService::allowedAccountIds($user);
 $month = trim((string) Request::query('month', date('Y-m')));
+$businessId = Validator::nullablePositiveInt(Request::query('business_id', ''));
+$createdByUserId = WorkspaceUserService::resolveTransactionCreatorFilter($user, Request::query('created_by_user_id', ''));
 if ($month === '') {
     $month = date('Y-m');
 }
@@ -37,6 +40,16 @@ $sql = 'SELECT
 $params = [
     ':user_id' => $userId,
 ];
+if ($businessId !== null) {
+    $sql .= '      AND t.business_id = :business_id
+';
+    $params[':business_id'] = $businessId;
+}
+if ($createdByUserId !== null) {
+    $sql .= '      AND t.created_by_user_id = :created_by_user_id
+';
+    $params[':created_by_user_id'] = $createdByUserId;
+}
 
 if ($start !== null && $end !== null) {
     $sql .= '      AND t.transaction_date BETWEEN :start_date AND :end_date
@@ -44,6 +57,15 @@ if ($start !== null && $end !== null) {
     $params[':start_date'] = $start;
     $params[':end_date'] = $end;
 }
+
+$sql .= UserAccountAccessService::buildTransactionScopeSql(
+    't',
+    $allowedAccountIds,
+    $params,
+    'tx_category_summary',
+    false
+) . '
+';
 
 $sql .= '     WHERE c.user_id = :user_id
        AND c.is_deleted = 0
@@ -62,6 +84,8 @@ foreach ($rows as $row) {
 
 Response::success('Category summary fetched.', [
     'month' => $month,
+    'business_id' => $businessId,
+    'created_by_user_id' => $createdByUserId,
     'total_spent' => round($totalSpent, 2),
     'categories' => $rows,
 ]);

@@ -18,11 +18,13 @@ if ($name === '') {
 
 $user = AuthService::register($name, $email, $password);
 TokenService::cleanupExpiredTokens((int) $user['id']);
+$settings = PermissionService::decorateSettings($user, UserSettingsService::get((int) $user['id']));
 $accessToken = TokenService::issueAccessToken($user);
 $refreshToken = TokenService::issueRefreshToken((int) $user['id']);
 
 Response::success('Registration successful.', [
     'user' => $user,
+    'settings' => $settings,
     'access_token' => $accessToken,
     'refresh_token' => $refreshToken,
     'access_expires_in' => (int) env('ACCESS_TOKEN_TTL', '900'),

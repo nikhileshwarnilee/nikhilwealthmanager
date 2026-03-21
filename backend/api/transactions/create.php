@@ -7,9 +7,10 @@ require_once dirname(__DIR__, 2) . '/bootstrap.php';
 RateLimitMiddleware::enforce('transactions_create', 250, 600);
 Request::enforceMethod('POST');
 $user = AuthMiddleware::user();
+$workspaceUserId = AuthService::workspaceOwnerId($user);
 
 $input = Request::body();
-$transaction = TransactionService::create((int) $user['id'], $input);
+$transaction = TransactionService::create($workspaceUserId, $input, (int) $user['id']);
 
 Response::success('Transaction created.', [
     'transaction' => $transaction,
