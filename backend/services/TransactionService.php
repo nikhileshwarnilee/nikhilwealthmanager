@@ -11,18 +11,12 @@ final class TransactionService
         $pdo->beginTransaction();
 
         try {
-            $balanceSnapshot = self::snapshotAccountBalances($pdo, $userId);
             $id = self::insertTransaction($pdo, $userId, $data, $actorUserId);
             if (($data['ledger_entry_id'] ?? null) !== null) {
                 LedgerService::markConverted($userId, (int) $data['ledger_entry_id'], $id, $pdo);
             }
             AssetService::applyTransactionDelta($pdo, $userId, null, $data);
-            $recalculated = BalanceRecalculationService::recalculate($userId, $pdo, false);
-            self::assertNonCreditFinalBalances(
-                $balanceSnapshot,
-                (array) ($recalculated['balances'] ?? []),
-                (array) ($recalculated['account_meta'] ?? [])
-            );
+            BalanceRecalculationService::recalculate($userId, $pdo, false);
             $pdo->commit();
 
             return self::findById($id, $userId);
@@ -38,7 +32,6 @@ final class TransactionService
         $pdo->beginTransaction();
 
         try {
-            $balanceSnapshot = self::snapshotAccountBalances($pdo, $userId);
             $existing = self::findRawById($transactionId, $userId, true, $pdo);
             if (!$existing || (int) ($existing['is_deleted'] ?? 0) === 1) {
                 Response::error('Transaction not found.', 404);
@@ -96,12 +89,7 @@ final class TransactionService
             ]);
 
             AssetService::applyTransactionDelta($pdo, $userId, $existing, $next);
-            $recalculated = BalanceRecalculationService::recalculate($userId, $pdo, false);
-            self::assertNonCreditFinalBalances(
-                $balanceSnapshot,
-                (array) ($recalculated['balances'] ?? []),
-                (array) ($recalculated['account_meta'] ?? [])
-            );
+            BalanceRecalculationService::recalculate($userId, $pdo, false);
             $pdo->commit();
 
             return self::findById($transactionId, $userId);
@@ -117,7 +105,6 @@ final class TransactionService
         $pdo->beginTransaction();
 
         try {
-            $balanceSnapshot = self::snapshotAccountBalances($pdo, $userId);
             $existing = self::findRawById($transactionId, $userId, true, $pdo);
             if (!$existing || (int) ($existing['is_deleted'] ?? 0) === 1) {
                 Response::error('Transaction not found.', 404);
@@ -143,12 +130,7 @@ final class TransactionService
             $stmt->execute([':id' => $transactionId, ':user_id' => $userId]);
 
             AssetService::applyTransactionDelta($pdo, $userId, $existing, null);
-            $recalculated = BalanceRecalculationService::recalculate($userId, $pdo, false);
-            self::assertNonCreditFinalBalances(
-                $balanceSnapshot,
-                (array) ($recalculated['balances'] ?? []),
-                (array) ($recalculated['account_meta'] ?? [])
-            );
+            BalanceRecalculationService::recalculate($userId, $pdo, false);
             $pdo->commit();
         } catch (Throwable $exception) {
             $pdo->rollBack();
@@ -191,7 +173,7 @@ final class TransactionService
             ], null);
 
             if ($recalculate) {
-                BalanceRecalculationService::recalculate($userId, $db);
+                BalanceRecalculationService::recalculate($userId, $db, false);
             }
 
             if ($ownsTransaction) {
@@ -536,46 +518,6 @@ final class TransactionService
     {
         return (string) ($transaction['type'] ?? '') === 'opening_adjustment'
             || (string) ($transaction['reference_type'] ?? '') === 'system';
-    }
-
-    private static function snapshotAccountBalances(PDO $pdo, int $userId): array
-    {
-        $stmt = $pdo->prepare(
-            'SELECT id, current_balance
-             FROM accounts
-             WHERE user_id = :user_id
-               AND is_deleted = 0'
-        );
-        $stmt->execute([':user_id' => $userId]);
-
-        $snapshot = [];
-        foreach ($stmt->fetchAll() as $row) {
-            $snapshot[(int) $row['id']] = round((float) ($row['current_balance'] ?? 0), 2);
-        }
-
-        return $snapshot;
-    }
-
-    private static function assertNonCreditFinalBalances(array $beforeBalances, array $afterBalances, array $accountMeta): void
-    {
-        foreach ($afterBalances as $accountId => $afterBalanceRaw) {
-            $id = (int) $accountId;
-            $meta = $accountMeta[$id] ?? [];
-            if ((string) ($meta['type'] ?? '') === 'credit') {
-                continue;
-            }
-
-            $beforeBalance = round((float) ($beforeBalances[$id] ?? 0), 2);
-            $afterBalance = round((float) $afterBalanceRaw, 2);
-
-            $wasNonNegative = $beforeBalance >= 0;
-            $isNegativeNow = $afterBalance < 0;
-            $worsenedNegative = $beforeBalance < 0 && $afterBalance < $beforeBalance;
-            if (($wasNonNegative && $isNegativeNow) || $worsenedNegative) {
-                $accountName = (string) ($meta['name'] ?? ('#' . $id));
-                Response::error('Insufficient balance in account: ' . $accountName, 422);
-            }
-        }
     }
 
     private static function assertAccount(int $accountId, int $userId, ?PDO $pdo = null, ?int $actorUserId = null): array
