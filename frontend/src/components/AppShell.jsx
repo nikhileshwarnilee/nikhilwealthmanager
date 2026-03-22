@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import HeaderBar from './HeaderBar';
 import BottomTabs from './BottomTabs';
@@ -30,13 +30,15 @@ export default function AppShell({
   const location = useLocation();
   const swipeStartRef = useRef(null);
   const mainRef = useRef(null);
+  const handleRefresh = useCallback(async () => {
+    if (onRefresh) {
+      await onRefresh();
+    }
+  }, [onRefresh]);
   const { pullDistance, refreshing } = usePullToRefresh(
-    async () => {
-      if (onRefresh) {
-        await onRefresh();
-      }
-    },
-    Boolean(onRefresh)
+    handleRefresh,
+    Boolean(onRefresh),
+    mainRef
   );
 
   const shouldIgnoreSwipeTarget = (target) => {

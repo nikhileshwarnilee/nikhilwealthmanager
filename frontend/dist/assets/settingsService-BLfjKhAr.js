@@ -1,1 +1,0 @@
-import{h as s,k as e}from"./index-Dw6EEqzb.js";async function a(){const t=await s.get("/settings/get.php");return e(t)}async function o(t){const n=await s.post("/settings/update.php",t);return e(n)}export{a as g,o as u};
