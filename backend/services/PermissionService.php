@@ -281,6 +281,8 @@ final class PermissionService
             'transactions/update.php' => ['feature' => 'transactions'],
             'transactions/delete.php' => ['feature' => 'transactions'],
 
+            'settings/reset-transactions.php' => ['super_admin' => true],
+
             'admin/users/list.php' => ['super_admin' => true, 'module' => 'users_access'],
             'admin/users/create.php' => ['super_admin' => true, 'module' => 'users_access'],
             'admin/users/update.php' => ['super_admin' => true, 'module' => 'users_access'],

@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AppShell from '../../components/AppShell';
+import BottomSheet from '../../components/BottomSheet';
 import HorizontalSelector from '../../components/HorizontalSelector';
 import { useAuth } from '../../app/AuthContext';
 import { useTheme } from '../../app/ThemeContext';
 import { useToast } from '../../app/ToastContext';
 import { changePassword, updateProfile } from '../../services/authService';
 import { normalizeApiError } from '../../services/http';
-import { getSettings, updateSettings } from '../../services/settingsService';
+import { getSettings, resetTransactions, updateSettings } from '../../services/settingsService';
 import { hapticTap } from '../../utils/haptics';
 import { isModuleEnabled } from '../../utils/modules';
-import { canManageUsers, hasFeatureAccess } from '../../utils/permissions';
+import { canManageUsers, hasFeatureAccess, isSuperAdmin } from '../../utils/permissions';
 
 const currencyOptions = [
   { value: 'INR', label: 'INR (Rs)' },
@@ -24,6 +25,10 @@ const initialPasswordForm = {
   confirm_password: ''
 };
 
+const initialResetForm = {
+  current_password: ''
+};
+
 export default function SettingsPage() {
   const { user, settings, setUser, setSettings, logout } = useAuth();
   const { darkMode, setDarkMode } = useTheme();
@@ -33,6 +38,8 @@ export default function SettingsPage() {
   const [savingPrefs, setSavingPrefs] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [resetSheetOpen, setResetSheetOpen] = useState(false);
+  const [resettingTransactions, setResettingTransactions] = useState(false);
   const [currency, setCurrency] = useState('INR');
   const [profileForm, setProfileForm] = useState({
     name: user?.name || '',
@@ -40,12 +47,14 @@ export default function SettingsPage() {
     current_password: ''
   });
   const [passwordForm, setPasswordForm] = useState(initialPasswordForm);
+  const [resetForm, setResetForm] = useState(initialResetForm);
   const businessesEnabled = isModuleEnabled(settings, 'businesses');
   const assetsEnabled = isModuleEnabled(settings, 'assets');
   const usersAccessEnabled = Boolean(settings?.workspace_users_access_enabled);
   const categoriesEnabled = hasFeatureAccess(user, 'categories');
   const budgetsEnabled = hasFeatureAccess(user, 'budgets');
   const canEditUsers = canManageUsers(user) && usersAccessEnabled;
+  const canResetWorkspace = isSuperAdmin(user);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -156,6 +165,35 @@ export default function SettingsPage() {
       pushToast({ type: 'danger', message: normalizeApiError(error) });
     } finally {
       setSavingPassword(false);
+    }
+  };
+
+  const closeResetSheet = (force = false) => {
+    if (resettingTransactions && !force) return;
+    setResetSheetOpen(false);
+    setResetForm(initialResetForm);
+  };
+
+  const onResetTransactions = async () => {
+    if (!resetForm.current_password) {
+      pushToast({ type: 'warning', message: 'Enter your current password to continue.' });
+      return;
+    }
+
+    setResettingTransactions(true);
+    try {
+      const result = await resetTransactions({
+        current_password: resetForm.current_password
+      });
+      closeResetSheet(true);
+      pushToast({
+        type: 'success',
+        message: `Reset complete. ${Number(result.transactions_deleted || 0)} transaction(s) cleared.`
+      });
+    } catch (error) {
+      pushToast({ type: 'danger', message: normalizeApiError(error) });
+    } finally {
+      setResettingTransactions(false);
     }
   };
 
@@ -360,6 +398,15 @@ export default function SettingsPage() {
                 Users & Access
               </Link>
             ) : null}
+            {canResetWorkspace ? (
+              <button
+                type="button"
+                className="col-span-2 rounded-xl bg-amber-500 px-3 py-3 text-sm font-semibold text-white"
+                onClick={() => setResetSheetOpen(true)}
+              >
+                Reset
+              </button>
+            ) : null}
             <button
               type="button"
               className="col-span-2 rounded-xl bg-danger px-3 py-3 text-sm font-semibold text-white"
@@ -370,6 +417,63 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      <BottomSheet open={resetSheetOpen} onClose={closeResetSheet} title="Reset Transactions">
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            This reset clears transaction history and keeps today&apos;s account balances as the new opening balances.
+          </p>
+
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-100">
+            <p className="font-semibold">What will be deleted</p>
+            <ul className="mt-2 space-y-1">
+              <li>All income, expense, transfer, asset, and opening-adjustment transactions saved so far.</li>
+              <li>Attached receipt files linked to those transactions.</li>
+              <li>Transaction history used by reports, charts, and full history screens.</li>
+            </ul>
+          </div>
+
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-100">
+            <p className="font-semibold">What will stay</p>
+            <ul className="mt-2 space-y-1">
+              <li>All accounts stay intact, and each current balance becomes that account&apos;s new opening balance.</li>
+              <li>Receivables, payables, and ledger contacts stay intact.</li>
+              <li>Categories, budgets, businesses, asset types, users, and app settings stay intact.</li>
+            </ul>
+          </div>
+
+          <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+            Current Password
+            <input
+              type="password"
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+              value={resetForm.current_password}
+              onChange={(event) =>
+                setResetForm((prev) => ({ ...prev, current_password: event.target.value }))
+              }
+              autoComplete="current-password"
+            />
+          </label>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              onClick={closeResetSheet}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={resettingTransactions}
+              className="rounded-xl bg-danger px-3 py-2 text-sm font-semibold text-white disabled:opacity-70"
+              onClick={onResetTransactions}
+            >
+              {resettingTransactions ? 'Resetting...' : 'Reset'}
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
     </AppShell>
   );
 }

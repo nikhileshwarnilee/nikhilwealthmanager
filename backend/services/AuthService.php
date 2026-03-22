@@ -319,13 +319,32 @@ final class AuthService
 
     public static function changePassword(int $userId, string $currentPassword, string $newPassword): void
     {
+        $newPassword = Validator::password($newPassword);
+        $currentHash = self::assertCurrentPassword($userId, $currentPassword);
+        if (password_verify($newPassword, $currentHash)) {
+            Response::error('New password must be different from current password.', 422);
+        }
+
+        $update = db()->prepare(
+            'UPDATE users
+             SET password_hash = :password_hash
+             WHERE id = :id
+             LIMIT 1'
+        );
+        $update->execute([
+            ':password_hash' => password_hash($newPassword, PASSWORD_DEFAULT),
+            ':id' => $userId,
+        ]);
+    }
+
+    public static function assertCurrentPassword(int $userId, string $currentPassword, ?PDO $pdo = null): string
+    {
         if (trim($currentPassword) === '') {
             Response::error('Current password is required.', 422);
         }
 
-        $newPassword = Validator::password($newPassword);
-
-        $stmt = db()->prepare(
+        $db = $pdo ?? db();
+        $stmt = $db->prepare(
             'SELECT password_hash
              FROM users
              WHERE id = :id
@@ -341,20 +360,8 @@ final class AuthService
         if (!password_verify($currentPassword, $currentHash)) {
             Response::error('Current password is incorrect.', 401);
         }
-        if (password_verify($newPassword, $currentHash)) {
-            Response::error('New password must be different from current password.', 422);
-        }
 
-        $update = db()->prepare(
-            'UPDATE users
-             SET password_hash = :password_hash
-             WHERE id = :id
-             LIMIT 1'
-        );
-        $update->execute([
-            ':password_hash' => password_hash($newPassword, PASSWORD_DEFAULT),
-            ':id' => $userId,
-        ]);
+        return $currentHash;
     }
 
     public static function setPasswordDirect(int $userId, string $newPassword): void

@@ -10,3 +10,8 @@ export async function updateSettings(payload) {
   return unwrapApiResponse(response);
 }
 
+export async function resetTransactions(payload) {
+  const response = await http.post('/settings/reset-transactions.php', payload);
+  return unwrapApiResponse(response);
+}
+

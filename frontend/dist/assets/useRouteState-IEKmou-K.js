@@ -1,0 +1,1 @@
+import{l as a,r}from"./index-DlAvxP1p.js";function f(t){return typeof t=="function"?t():t}function p(t,o){const u=a(),e=r.useRef(null),c=`${u.pathname}:${t}`;e.current||(e.current=()=>f(o));const[s,n]=r.useState(()=>e.current());return r.useEffect(()=>{n(e.current())},[c]),[s,n]}export{p as u};
