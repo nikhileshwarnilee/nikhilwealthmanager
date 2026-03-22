@@ -1,0 +1,1 @@
+import{h as n,k as e}from"./index-Bbnfs-MD.js";async function p(){const t=await n.get("/settings/get.php");return e(t)}async function r(t){const s=await n.post("/settings/update.php",t);return e(s)}async function o(t){const s=await n.post("/settings/reset-transactions.php",t);return e(s)}export{p as g,o as r,r as u};
